@@ -220,6 +220,17 @@ export function PaidBadge({ paid }: { paid: boolean }) {
   );
 }
 
+/** App mark: the transparent flask from public/gorilab.png, cropped by CSS, on an accent tile. */
+export function Logo({ className }: { className?: string }) {
+  return (
+    <span
+      aria-hidden
+      className={cn("shrink-0 rounded-lg bg-accent bg-no-repeat", className)}
+      style={{ backgroundImage: "url(/gorilab.png)", backgroundSize: "170%", backgroundPosition: "50% 18%" }}
+    />
+  );
+}
+
 export function ColorDot({ color, className }: { color?: string; className?: string }) {
   return <span className={cn("inline-block size-3 shrink-0 rounded-full border border-black/20", className)} style={{ background: color || "transparent" }} />;
 }

@@ -1,20 +1,17 @@
 "use client";
 // Order detail, main doc 6.3.
 import {
-  ArrowLeft, Check, Copy, Download, Eye, FileText, Link2, Plus, QrCode, RefreshCw, Repeat, Trash2, Truck,
+  ArrowLeft, Check, Download, Eye, FileText, Plus, Pencil, Repeat, Trash2, Truck,
 } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import QRCode from "qrcode";
-import { useEffect, useState } from "react";
-import { toast } from "sonner";
+import { useState } from "react";
 import {
   Button, Card, ColorDot, Dialog, Field, Input, Kpi, ListSkeleton, NumberInput, Select, StatusBadge, Switch, cn,
 } from "@/components/ui";
 import { api, useApi, useCurrency, useMutate } from "@/lib/client";
 import { parseJson } from "@/lib/json";
 import { dateDot, dateShort, duration, money, pct } from "@/lib/format";
-import { printQr } from "@/lib/qr";
 import { STATUSES, STEPPER } from "@/lib/status";
 import { printerName, type Order } from "@/lib/types";
 
@@ -26,18 +23,12 @@ export default function OrderDetail() {
   const currency = useCurrency();
   const m = (x: number) => money(x, currency);
   const { data: o, isLoading } = useApi<Detail>(`/api/orders/${id}`);
-  const { data: cfg } = useApi<{ publicBaseUrl: string; shareLinksEnabled: boolean }>("/api/app-config");
-  const [qr, setQr] = useState("");
   const [svc, setSvc] = useState<{ name: string; cost: number; mode: "fixed" | "markup"; price: number } | null>(null);
   const [tracking, setTracking] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (o) QRCode.toDataURL(o.number, { margin: 1, width: 240 }).then(setQr);
-  }, [o]);
 
   const patch = useMutate<Partial<Order>>((p) => api(`/api/orders/${id}`, { method: "PATCH", json: p }));
   const setStatus = useMutate<string>((status) => api(`/api/orders/${id}/status`, { method: "PATCH", json: { status } }), "Status updated");
-  const recalc = useMutate<void>(() => api(`/api/orders/${id}/recalculate`, { method: "POST" }), "Recalculated with current prices");
   const repeat = useMutate<void, { id: string }>(() => api(`/api/orders/${id}/repeat`, { method: "POST" }), "Order repeated");
   const remove = useMutate<void>(() => api(`/api/orders/${id}`, { method: "DELETE" }), "Order deleted");
   const addService = useMutate<NonNullable<typeof svc>>((s) => api(`/api/orders/${id}/services`, { method: "POST", json: s }), "Service added");
@@ -47,12 +38,11 @@ export default function OrderDetail() {
   const stepIdx = STEPPER.indexOf(o.status as (typeof STEPPER)[number]);
   const offStepper = stepIdx < 0;
   const grams = o.materials.reduce((a, x) => a + x.grams, 0);
-  const shareUrl = cfg ? `${cfg.publicBaseUrl}/public/order/${o.clientLinkToken}` : "";
   const docLink = (type: string) => `/en/documents?create=${type}&order=${o.id}`;
 
   const costLines: [string, number][] = ([
     ["Material", o.costMaterial], ["Electricity", o.costElectricity], ["Printer", o.costPrinter], ["Dryer", o.costDryer],
-    ["Labor", o.costLabor], ["Warehouse items", o.costWarehouse], ["Consumables", o.costConsumables],
+    ["Labor", o.costLabor], ["Stock items", o.costWarehouse], ["Consumables", o.costConsumables],
     ["Post-processing", o.costPostprocessing], ["Packaging", o.costPackaging], ["Delivery", o.costDelivery], ["Other and services", o.costOther],
   ] as [string, number][]).filter(([, v]) => v > 0.0049);
 
@@ -71,9 +61,8 @@ export default function OrderDetail() {
         <div className="flex flex-wrap gap-2">
           <Link href={docLink("quote")} className="inline-flex h-11 items-center gap-2 rounded-xl border border-border bg-card px-3 text-sm hover:bg-card-2"><Eye className="size-4" /> Preview</Link>
           {o.slicerFileUrl && <a href={o.slicerFileUrl} download className="inline-flex h-11 items-center gap-2 rounded-xl border border-border bg-card px-3 text-sm hover:bg-card-2"><Download className="size-4" /> Slicer file</a>}
-          <Button onClick={() => recalc.mutate()} loading={recalc.isPending}><RefreshCw className="size-4" /> Recalculate</Button>
+          {!o.personalUse && o.calcInput !== "{}" && <Link href={`/en/calculator?order=${o.id}`} className="inline-flex h-11 items-center gap-2 rounded-xl border border-border bg-card px-3 text-sm hover:bg-card-2"><Pencil className="size-4" /> Edit order</Link>}
           <Button onClick={() => repeat.mutate(undefined, { onSuccess: (n) => router.push(`/en/orders/${n.id}`) })}><Repeat className="size-4" /> Repeat order</Button>
-          <Button size="icon" aria-label="Print QR" onClick={() => printQr(o.number, o.name)}><QrCode className="size-4" /></Button>
           <Button size="icon" variant="ghost" aria-label="Delete order" onClick={() => confirm(`Delete order "${o.name}"? Stock used by it is returned.`) && remove.mutate(undefined, { onSuccess: () => router.push("/en/orders") })}>
             <Trash2 className="size-5 text-red-500" />
           </Button>
@@ -186,29 +175,6 @@ export default function OrderDetail() {
                 <Button aria-label="Save tracking number" disabled={tracking === null || tracking === o.trackingNumber} onClick={() => patch.mutate({ trackingNumber: tracking! }, { onSuccess: () => setTracking(null) })}><Truck className="size-4" /></Button>
               </div>
             </Field>
-            <div className="mt-3 border-t border-border pt-3">
-              <Button
-                className="w-full"
-                disabled={!cfg?.shareLinksEnabled}
-                title={cfg?.shareLinksEnabled ? undefined : "Needs a public URL"}
-                onClick={() => navigator.clipboard.writeText(shareUrl).then(() => toast.success("Client link copied"))}
-              >
-                <Link2 className="size-4" /> Link for client
-              </Button>
-              {!cfg?.shareLinksEnabled && <p className="mt-1 text-xs text-muted">Needs a public URL. Set PUBLIC_BASE_URL (see the local build guide, Cloudflare Tunnel).</p>}
-            </div>
-          </Card>
-
-          <Card title="Order QR code">
-            <div className="flex items-center gap-4">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              {qr && <img src={qr} alt={`QR code for order ${o.number}`} className="size-28 rounded-lg bg-white p-1" />}
-              <div className="text-sm">
-                <div className="font-mono text-lg">{o.number}</div>
-                <p className="text-muted">Search this code on the orders screen to find this order.</p>
-                <Button size="sm" className="mt-2" onClick={() => navigator.clipboard.writeText(o.number).then(() => toast.success("Copied"))}><Copy className="size-4" /> Copy</Button>
-              </div>
-            </div>
           </Card>
 
           <Card title="Documents">

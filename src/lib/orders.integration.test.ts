@@ -40,7 +40,7 @@ afterAll(async () => {
 });
 
 describe("material deduction", () => {
-  it("deducts once at Printing, returns on Cancelled, never twice", async () => {
+  it("deducts once when placed, returns on Cancelled, never twice", async () => {
     const printer = await m.db.printer.create({ data: { workshopId: ws, model: "Test", powerW: 200, price: 100, lifetimeH: 1000 } });
     const client = await m.db.client.create({ data: { workshopId: ws, name: "Client" } });
     const order = await m.orders.createOrder(ws, {
@@ -53,7 +53,7 @@ describe("material deduction", () => {
       status: "confirmed",
     });
     expect(order.totalCost).toBeGreaterThan(0);
-    expect(await stock()).toBe(1000);
+    expect(await stock()).toBe(880);
 
     await m.orders.setStatus(ws, order.id, "printing");
     expect(await stock()).toBe(880);
@@ -77,6 +77,20 @@ describe("material deduction", () => {
     expect(await stock()).toBe(1000);
   });
 
+  it("takes stock shelf items when placed and returns them on Cancelled", async () => {
+    const shelf = await m.db.warehouseShelf.findFirstOrThrow({ where: { workshopId: ws } });
+    const item = await m.db.shelfItem.create({ data: { workshopId: ws, shelfId: shelf.id, name: "Keyring", quantity: 10, unitCost: 0.5 } });
+    const qty = async () => (await m.db.shelfItem.findUniqueOrThrow({ where: { id: item.id } })).quantity;
+    const order = await m.orders.createOrder(ws, {
+      ...m.calc.emptyCalc(), name: "With keyring", warehouseItems: [{ shelfItemId: item.id, qty: 2 }], status: "negotiation",
+    });
+    expect(await qty()).toBe(8);
+    await m.orders.setStatus(ws, order.id, "cancelled");
+    expect(await qty()).toBe(10);
+    await m.orders.deleteOrder(ws, order.id);
+    expect(await qty()).toBe(10);
+  });
+
   it("manual material deducts nothing", async () => {
     const order = await m.orders.createOrder(ws, {
       ...m.calc.emptyCalc(),
@@ -87,6 +101,23 @@ describe("material deduction", () => {
     });
     expect(order.costMaterial).toBe(1);
     expect(await stock()).toBe(1000);
+  });
+
+  it("editing an order re-prices it and moves stock to the new grams", async () => {
+    const calc = { ...m.calc.emptyCalc(), name: "Edit me", materials: [{ filamentId, grams: 120 }], status: "printing" as const };
+    const order = await m.orders.createOrder(ws, calc);
+    expect(await stock()).toBe(880);
+
+    await m.orders.updateOrder(ws, order.id, { ...calc, name: "Edited", materials: [{ filamentId, grams: 200 }] });
+    const edited = await m.db.order.findUniqueOrThrow({ where: { id: order.id } });
+    expect(edited.name).toBe("Edited");
+    expect(edited.costMaterial).toBeGreaterThan(order.costMaterial);
+    expect(await stock()).toBe(800);
+
+    // a status change made while editing goes through the stock rules
+    await m.orders.updateOrder(ws, order.id, { ...calc, materials: [{ filamentId, grams: 200 }], status: "cancelled" });
+    expect(await stock()).toBe(1000);
+    await m.orders.deleteOrder(ws, order.id);
   });
 
   it("records the date of each status once", async () => {

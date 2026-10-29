@@ -3,22 +3,28 @@
 import { ArrowLeft, Box, ChevronRight, Eye, EyeOff, History, KeyRound, Package, Palette, Plus, ShoppingCart, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { CsvTools } from "@/components/csv-tools";
 import { DataTable, useLocal } from "@/components/data-table";
 import {
-  Badge, Button, Card, Dialog, EmptyState, Field, Input, ListSkeleton, NumberInput, PageHeader, PhotoInput, Segmented, Select, deleteWithUndo,
+  Button, Card, Dialog, EmptyState, Field, Input, ListSkeleton, NumberInput, PageHeader, PhotoInput, Segmented, Select, deleteWithUndo,
 } from "@/components/ui";
 import { api, useCurrency, useList, useMutate, useQueryState, useRemove, useSave } from "@/lib/client";
 import { emptyCalc } from "@/lib/calc";
+import { num, toCsv } from "@/lib/csv";
 import { dateUS, money } from "@/lib/format";
 import type { Client, Filament } from "@/lib/types";
 
 type Item = { id: string; shelfId: string; name: string; quantity: number; unitCost: number };
 type Good = Item & { unitPrice: number; photoUrl: string | null; description: string; modelId: string | null };
 type Shelf = {
-  id: string; name: string; icon: string; link: string; builtIn: boolean; kind: string; comingSoon: boolean; hidden: boolean;
+  id: string; name: string; icon: string; link: string; builtIn: boolean; kind: string; hidden: boolean;
   photoUrl: string | null; items: Item[]; goods: Good[];
 };
 type WriteOff = { id: string; kind: string; name: string; quantity: number; reason: string; createdAt: string };
+
+// CSV per shelf: finished models also carry a sale price and description
+const ITEM_COLUMNS = ["name", "quantity", "unitCost"];
+const GOOD_COLUMNS = [...ITEM_COLUMNS, "unitPrice", "description"];
 
 const ICONS: Record<string, typeof Box> = { spool: Package, key: KeyRound, palette: Palette, box: Box };
 const ShelfIcon = ({ s }: { s: Shelf }) => {
@@ -52,12 +58,12 @@ export default function WarehousePage() {
   if (shelf) return <ShelfView shelf={shelf} onBack={() => setOpen("")} />;
 
   const visible = shelves.filter((s) => showHidden || !s.hidden);
-  const openShelf = (s: Shelf) => (s.comingSoon ? null : s.kind === "filaments" ? router.push("/en/filaments") : setOpen(s.id));
+  const openShelf = (s: Shelf) => (s.kind === "filaments" ? router.push("/en/filaments") : setOpen(s.id));
 
   return (
     <div>
       <PageHeader
-        title="Warehouse"
+        title="Stocks"
         subtitle="Filaments, finished models, packaging and custom shelves"
         actions={
           <>
@@ -79,24 +85,24 @@ export default function WarehousePage() {
           rows={visible}
           rowKey={(s) => s.id}
           onRowClick={openShelf}
-          rowClass={(s) => (s.comingSoon ? "opacity-50" : s.hidden ? "opacity-60" : "")}
+          rowClass={(s) => (s.hidden ? "opacity-60" : "")}
           card={(s) => (
             <div className="flex items-center gap-3">
               <ShelfIcon s={s} />
               <div className="min-w-0 flex-1">
-                <div className="font-medium">{s.name} {s.comingSoon && <Badge className="bg-card-2">Coming soon</Badge>}</div>
-                <div className="text-sm text-muted">{s.comingSoon ? "—" : `${Math.round(totals(s).qty * 100) / 100} pcs · ${money(totals(s).value, currency, true)}`}</div>
+                <div className="font-medium">{s.name}</div>
+                <div className="text-sm text-muted">{`${Math.round(totals(s).qty * 100) / 100} pcs · ${money(totals(s).value, currency, true)}`}</div>
               </div>
-              {!s.comingSoon && <ChevronRight className="size-5 text-muted" />}
+              <ChevronRight className="size-5 text-muted" />
             </div>
           )}
           columns={[
             { key: "name", header: "Shelf", fixed: true, cell: (s) => (
-              <div className="flex items-center gap-3"><ShelfIcon s={s} /><span className="font-medium">{s.name}</span>{s.comingSoon && <Badge className="bg-card-2">Coming soon</Badge>}</div>
+              <div className="flex items-center gap-3"><ShelfIcon s={s} /><span className="font-medium">{s.name}</span></div>
             ) },
             { key: "type", header: "Type", cell: (s) => (s.builtIn ? "Built-in shelf" : "Custom shelf") },
-            { key: "qty", header: "Quantity", sort: (s) => totals(s).qty, cell: (s) => (s.comingSoon ? "—" : `${Math.round(totals(s).qty * 100) / 100} pcs`) },
-            { key: "value", header: "Total value", sort: (s) => totals(s).value, cell: (s) => (s.comingSoon ? "—" : money(totals(s).value, currency, true)) },
+            { key: "qty", header: "Quantity", sort: (s) => totals(s).qty, cell: (s) => `${Math.round(totals(s).qty * 100) / 100} pcs` },
+            { key: "value", header: "Total value", sort: (s) => totals(s).value, cell: (s) => money(totals(s).value, currency, true) },
             { key: "hide", header: "", fixed: true, cell: (s) => (
               <Button size="icon" variant="ghost" aria-label={s.hidden ? "Show shelf" : "Hide shelf"} onClick={(e) => { e.stopPropagation(); save.mutate({ id: s.id, hidden: !s.hidden }); }}>
                 {s.hidden ? <Eye className="size-4" /> : <EyeOff className="size-4" />}
@@ -183,7 +189,7 @@ function ShelfView({ shelf, onBack }: { shelf: Shelf; onBack: () => void }) {
 
   return (
     <div className="max-w-4xl">
-      <button type="button" onClick={onBack} className="mb-3 inline-flex items-center gap-1 text-sm text-muted hover:text-fg"><ArrowLeft className="size-4" /> Warehouse</button>
+      <button type="button" onClick={onBack} className="mb-3 inline-flex items-center gap-1 text-sm text-muted hover:text-fg"><ArrowLeft className="size-4" /> Stocks</button>
       <PageHeader
         title={shelf.name}
         subtitle={`${list.reduce((a, i) => a + i.quantity, 0)} pcs · ${money(list.reduce((a, i) => a + i.quantity * i.unitCost, 0), currency)}`}
@@ -193,11 +199,30 @@ function ShelfView({ shelf, onBack }: { shelf: Shelf; onBack: () => void }) {
             {!shelf.builtIn && (
               <Button variant="ghost" onClick={() => deleteWithUndo(shelf.name, () => removeShelf.mutate(shelf.id, { onSuccess: onBack }))}><Trash2 className="size-4 text-red-500" /> Delete shelf</Button>
             )}
+            <CsvTools
+              name={shelf.name.toLowerCase().replace(/\s+/g, "-")}
+              label="items"
+              columns={finished ? GOOD_COLUMNS : ITEM_COLUMNS}
+              toCsv={() => toCsv(finished ? GOOD_COLUMNS : ITEM_COLUMNS, list.map((i) => (finished ? GOOD_COLUMNS : ITEM_COLUMNS).map((k) => (i as Good)[k as keyof Good])))}
+              onImport={async (rows) => {
+                const named = rows.filter((r) => r.name);
+                for (const r of named) {
+                  await api(finished ? "/api/finished-goods" : "/api/shelf-items", {
+                    method: "POST",
+                    json: {
+                      shelfId: shelf.id, name: r.name, quantity: num(r.quantity), unitCost: num(r.unitCost),
+                      ...(finished ? { unitPrice: num(r.unitPrice), description: r.description ?? "" } : {}),
+                    },
+                  });
+                }
+                return named.length;
+              }}
+            />
             <Button variant="primary" onClick={() => setForm({ shelfId: shelf.id, name: "", quantity: 1, unitCost: 0, unitPrice: 0 })}><Plus className="size-4" /> Add item</Button>
           </>
         }
       />
-      {finished && <p className="mb-3 text-sm text-muted">Use “Save to warehouse” in the calculator to add printed models here with their real cost.</p>}
+      {finished && <p className="mb-3 text-sm text-muted">Use “Save to stocks” in the calculator to add printed models here with their real cost.</p>}
       {list.length === 0 ? <EmptyState text="No items on this shelf" /> : (
         <div className="space-y-2">
           {list.map((i) => (

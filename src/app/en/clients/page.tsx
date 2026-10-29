@@ -4,9 +4,11 @@ import { Plus, Search, Send, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Avatar, ClientFields, pickClient } from "@/components/client-form";
+import { CsvTools } from "@/components/csv-tools";
 import { DataTable, useLocal } from "@/components/data-table";
 import { Badge, Button, Dialog, EmptyState, Input, ListSkeleton, PageHeader, Segmented, Select, deleteWithUndo } from "@/components/ui";
-import { useCurrency, useList, useRemove, useSave } from "@/lib/client";
+import { api, useCurrency, useList, useRemove, useSave } from "@/lib/client";
+import { num, toCsv } from "@/lib/csv";
 import { money } from "@/lib/format";
 import type { Client } from "@/lib/types";
 
@@ -15,6 +17,25 @@ const LEVEL_CLS: Record<string, string> = {
   Regular: "bg-purple-500/15 text-purple-500",
   Pro: "bg-accent/15 text-accent",
 };
+
+// CSV: plain fields plus the category by name (created on import when missing)
+const CLIENT_FIELDS = ["name", "companyName", "contactPerson", "phone", "email", "telegram", "address", "source", "discountPct", "taxId", "signer", "note"] as const;
+const CLIENT_COLUMNS = [...CLIENT_FIELDS, "category"];
+const clientsCsv = (rows: Client[]) => toCsv(CLIENT_COLUMNS, rows.map((c) => [...CLIENT_FIELDS.map((k) => c[k]), c.category?.name]));
+
+async function importClients(rows: Record<string, string>[]) {
+  const cats = await api<{ id: string; name: string }[]>("/api/client-categories");
+  let n = 0;
+  for (const r of rows) {
+    if (!r.name) continue;
+    let cat = r.category ? cats.find((c) => c.name.toLowerCase() === r.category.toLowerCase()) : undefined;
+    if (r.category && !cat) cats.push((cat = await api<{ id: string; name: string }>("/api/client-categories", { method: "POST", json: { name: r.category } })));
+    const fields = Object.fromEntries(CLIENT_FIELDS.map((k) => [k, r[k] ?? ""]));
+    await api("/api/clients", { method: "POST", json: { ...fields, discountPct: num(r.discountPct), categoryId: cat?.id ?? null } });
+    n++;
+  }
+  return n;
+}
 
 export default function ClientsPage() {
   const { data, isLoading } = useList<Client>("clients");
@@ -36,7 +57,12 @@ export default function ClientsPage() {
         title="Clients"
         info="Levels come from the number of orders: Beginner 0–4, Regular 5–14, Pro 15+"
         subtitle={`${all.length} clients`}
-        actions={<Button variant="primary" onClick={() => setForm({ name: "", discountPct: 0 })}><Plus className="size-4" /> New client</Button>}
+        actions={
+          <>
+            <CsvTools name="clients" label="clients" columns={CLIENT_COLUMNS} toCsv={() => clientsCsv(rows)} onImport={importClients} />
+            <Button variant="primary" onClick={() => setForm({ name: "", discountPct: 0 })}><Plus className="size-4" /> New client</Button>
+          </>
+        }
       />
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <div className="relative min-w-48 flex-1">

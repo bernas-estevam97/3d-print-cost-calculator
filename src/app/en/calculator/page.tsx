@@ -17,7 +17,8 @@ import { api, upload, useApi, useList, useMutate, useRemove, useSave, type Setti
 import { dateInput, money, pct } from "@/lib/format";
 import { parseSlicerFile, SlicerError } from "@/lib/slicer";
 import { STATUSES } from "@/lib/status";
-import type { Client, Model } from "@/lib/types";
+import { parseJson } from "@/lib/json";
+import type { Client, Model, Order } from "@/lib/types";
 
 type Refs = CalcRefs & {
   clients: Client[];
@@ -69,6 +70,8 @@ export default function CalculatorPage() {
 function Calculator({ refs }: { refs: Refs }) {
   const router = useRouter();
   const sp = useSearchParams();
+  // ?order=<id>: edit that order instead of creating a new one
+  const editId = sp.get("order");
   const s = refs.rawSettings;
   const currency = s.currency;
   const m = (x: number) => money(x, currency);
@@ -102,7 +105,14 @@ function Calculator({ refs }: { refs: Refs }) {
     loaded.current = true;
     const modelId = sp.get("model");
     const local = readLocal();
-    if (modelId) {
+    if (editId) {
+      // the order's own fields win: they may have been changed on the order page after saving
+      api<Order>(`/api/orders/${editId}`).then((o) => load({
+        ...parseJson<object>(o.calcInput, {}),
+        name: o.name, clientId: o.clientId, printerId: o.printerId, tips: o.tips, status: o.status,
+        saleDate: o.saleDate, dueDate: o.dueDate ?? "", tags: parseJson<string[]>(o.tags, []), notes: o.notes,
+      })).catch(() => toast.error("Could not load the order"));
+    } else if (modelId) {
       // a prefilled calculation starts fresh; the unfinished one stays in Drafts (main doc 6.8)
       writeLocal(null);
       applyModel(modelId, fresh());
@@ -151,7 +161,7 @@ function Calculator({ refs }: { refs: Refs }) {
       : api<Saved>("/api/drafts", { method: "POST", json: { name: v.calc.name, input: v.calc } }),
   );
   useEffect(() => {
-    if (!touched || !hasInput(calc)) return;
+    if (editId || !touched || !hasInput(calc)) return;
     const now = new Date().toISOString();
     writeLocal({ calc, draftId, savedAt: now });
     const t = setTimeout(() => {
@@ -183,7 +193,7 @@ function Calculator({ refs }: { refs: Refs }) {
     setSavedAt(null);
     setTouched(false);
     toast("Form cleared", {
-      duration: 7000,
+      duration: 3500,
       action: { label: "Restore", onClick: () => { setCalcRaw(before.calc); setDraftId(before.draftId); setTouched(true); } },
     });
   }
@@ -204,12 +214,18 @@ function Calculator({ refs }: { refs: Refs }) {
 
   // ---- saving ----
   const saveOrder = useMutate<{ personalUse?: boolean }, { id: string }>(
-    (v) => api("/api/orders", { method: "POST", json: { calc, personalUse: v.personalUse } }),
+    (v) => editId
+      ? api(`/api/orders/${editId}`, { method: "PUT", json: { calc } })
+      : api("/api/orders", { method: "POST", json: { calc, personalUse: v.personalUse } }),
   );
-  const saveWarehouse = useMutate<void>(() => api("/api/calculator/warehouse", { method: "POST", json: { calc } }), "Saved to warehouse");
+  const saveWarehouse = useMutate<void>(() => api("/api/calculator/warehouse", { method: "POST", json: { calc } }), "Saved to stocks");
   const onSaveOrder = (personalUse = false) =>
     saveOrder.mutate({ personalUse }, {
       onSuccess: (o) => {
+        if (editId) {
+          toast.success("Order updated");
+          return router.push(`/en/orders/${editId}`);
+        }
         clearDraft();
         toast.success(personalUse ? "Written off for personal use" : "Order saved");
         router.push(`/en/orders/${o.id}`);
@@ -253,16 +269,27 @@ function Calculator({ refs }: { refs: Refs }) {
     <Breakdown
       calc={calc} setCalc={setCalc} r={r} m={m} settings={s} filled={filled} writeOffCost={writeOffCost}
       onSaveOrder={() => onSaveOrder(false)} onWriteOff={() => onSaveOrder(true)} onWarehouse={() => saveWarehouse.mutate()}
-      saving={saveOrder.isPending || saveWarehouse.isPending}
+      saving={saveOrder.isPending || saveWarehouse.isPending} editing={!!editId}
     />
   );
 
   return (
     <div>
-      <PageHeader title="Calculator" info="Every order starts here. Prices update as you type." subtitle={savedAt ? `Draft saved · ${hhmm(savedAt)}` : undefined} />
+      <PageHeader
+        title={editId ? "Edit order" : "Calculator"}
+        info={editId ? "Saving re-prices the order with today's prices." : "Every order starts here. Prices update as you type."}
+        subtitle={savedAt && !editId ? `Draft saved · ${hhmm(savedAt)}` : undefined}
+      />
+
+      {editId && (
+        <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-accent/40 bg-accent/10 px-4 py-3 text-sm">
+          <span className="flex-1">Editing &quot;{calc.name || "Untitled"}&quot;. Changes apply when you click Update order.</span>
+          <Link href={`/en/orders/${editId}`} className="font-medium text-accent hover:underline">Cancel</Link>
+        </div>
+      )}
 
       {/* templates and draft tools */}
-      <div className="mb-4 flex flex-wrap items-center gap-2">
+      <div className={cn("mb-4 flex flex-wrap items-center gap-2", editId && "hidden")}>
         <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto pb-1">
           {templates.map((t) => (
             <button key={t.id} type="button" onClick={() => load(t.input, { msg: `Template "${t.name}" loaded` })} className="h-9 shrink-0 rounded-full border border-border bg-card px-3 text-sm hover:border-accent">
@@ -451,13 +478,13 @@ function Calculator({ refs }: { refs: Refs }) {
           <Section title="Consumables & packaging">
             <div className="space-y-2">
               <div className="flex items-center justify-between text-sm">
-                <span>Warehouse items</span>
-                <Link href="/en/warehouse" className="text-xs text-accent">Open warehouse</Link>
+                <span>Stock items</span>
+                <Link href="/en/warehouse" className="text-xs text-accent">Open stocks</Link>
               </div>
               {calc.warehouseItems.length === 0 && <p className="text-xs text-muted">No items</p>}
               {calc.warehouseItems.map((w, i) => (
                 <div key={i} className="grid grid-cols-[1fr_90px_44px] gap-2">
-                  <Select aria-label="Warehouse item" value={w.shelfItemId} onChange={(e) => setCalc({ warehouseItems: calc.warehouseItems.map((x, j) => (j === i ? { ...x, shelfItemId: e.target.value } : x)) })}>
+                  <Select aria-label="Stock item" value={w.shelfItemId} onChange={(e) => setCalc({ warehouseItems: calc.warehouseItems.map((x, j) => (j === i ? { ...x, shelfItemId: e.target.value } : x)) })}>
                     {refs.shelfItems.map((it) => <option key={it.id} value={it.id}>{it.name} · {m(it.unitCost)} · {it.quantity} left</option>)}
                   </Select>
                   <NumberInput aria-label="Quantity" value={w.qty} onChange={(v) => setCalc({ warehouseItems: calc.warehouseItems.map((x, j) => (j === i ? { ...x, qty: v } : x)) })} />
@@ -601,7 +628,7 @@ function Calculator({ refs }: { refs: Refs }) {
 }
 
 function Breakdown({
-  calc, setCalc, r, m, settings, filled, writeOffCost, onSaveOrder, onWriteOff, onWarehouse, saving,
+  calc, setCalc, r, m, settings, filled, writeOffCost, onSaveOrder, onWriteOff, onWarehouse, saving, editing,
 }: {
   calc: CalcInput;
   setCalc: (p: Partial<CalcInput>) => void;
@@ -614,6 +641,7 @@ function Breakdown({
   onWriteOff: () => void;
   onWarehouse: () => void;
   saving: boolean;
+  editing: boolean;
 }) {
   const line = (label: string, v: number, sub?: React.ReactNode) =>
     v > 0 || sub ? (
@@ -646,7 +674,7 @@ function Breakdown({
         {line("Printer", r.costPrinter)}
         {line("Dryer", r.costDryer)}
         {line("Labor", r.costLabor)}
-        {line("Warehouse items", r.costWarehouse)}
+        {line("Stock items", r.costWarehouse)}
         {line("Consumables", r.costConsumables)}
         {line("Post-processing", r.costPostprocessing)}
         {line("Print file", r.costOther)}
@@ -741,11 +769,13 @@ function Breakdown({
       </div>
 
       <div className="space-y-2 border-t border-border pt-3">
-        <Button variant="primary" className="w-full" disabled={!filled} loading={saving} onClick={onSaveOrder}><Save className="size-4" /> Save order</Button>
-        <Button className="w-full" disabled={!filled || saving} onClick={onWarehouse}><Package className="size-4" /> Save to warehouse</Button>
+        <Button variant="primary" className="w-full" disabled={!filled} loading={saving} onClick={onSaveOrder}><Save className="size-4" /> {editing ? "Update order" : "Save order"}</Button>
+        {!editing && <>
+        <Button className="w-full" disabled={!filled || saving} onClick={onWarehouse}><Package className="size-4" /> Save to stocks</Button>
         <Checkbox label="Include labor (operator/painting/modeling)" checked={calc.includeLabor} onChange={(v) => setCalc({ includeLabor: v })} />
         <div className="flex items-center justify-between text-sm"><span className="text-muted">Cost to write off</span><Badge className="bg-card-2">{m(writeOffCost)}</Badge></div>
         <Button variant="ghost" className="w-full" disabled={!filled || saving} onClick={onWriteOff}>Write off for personal use</Button>
+        </>}
       </div>
     </Card>
   );

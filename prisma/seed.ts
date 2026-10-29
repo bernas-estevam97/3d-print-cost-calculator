@@ -86,7 +86,7 @@ async function main() {
 
   const printer = await db.printer.create({
     data: {
-      workshopId, manufacturer: "Bambu Lab", model: "A1 mini", technology: "FDM", powerW: 200, price: 150, lifetimeH: 10000,
+      workshopId, manufacturer: "Bambu Lab", model: "A1 mini", powerW: 200, price: 150, lifetimeH: 10000,
       hoursManual: 397.27, maintenanceIntervalHours: 300, maintenanceIntervalDays: 90,
     },
   });
@@ -109,7 +109,7 @@ async function main() {
   for (const [name, grams, minutes, price, key] of MODELS) {
     const m = await db.model.create({
       data: {
-        workshopId, name, printTimeMin: minutes, pricePerPiece: price, technology: "FDM",
+        workshopId, name, printTimeMin: minutes, pricePerPiece: price,
         filaments: { create: [{ filamentId: filId(key), grams }] },
       },
     });
@@ -189,10 +189,6 @@ async function main() {
         ],
       }),
     },
-  });
-
-  await db.calendarEvent.create({
-    data: { workshopId, title: "Order more black PLA", type: "todo", date: new Date("2026-10-30"), color: "#f97316" },
   });
 
   console.log(`Seeded. Log in with ${EMAIL} / demo1234`);

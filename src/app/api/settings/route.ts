@@ -6,7 +6,6 @@ const b = z.boolean();
 const n = z.coerce.number().min(0);
 const schema = z
   .object({
-    printTechnology: z.enum(["FDM", "SLA", "BOTH"]),
     electricityEnabled: b,
     electricityMode: z.enum(["single", "day_night"]),
     electricityTariff: n,

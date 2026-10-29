@@ -1,17 +1,19 @@
 "use client";
 // Orders list, main doc 6.2.
-import { Download, Filter, KanbanSquare, Plus, Search, Trash2, Wrench } from "lucide-react";
+import { Filter, KanbanSquare, Plus, Search, Trash2, Wrench } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { CsvTools } from "@/components/csv-tools";
 import { DataTable, useLocal } from "@/components/data-table";
 import {
   Button, Checkbox, ColorDot, Dialog, EmptyState, Field, Input, ListSkeleton, NumberInput, PageHeader, PaidBadge, Segmented, Select,
   StatusBadge, Thumb,
 } from "@/components/ui";
 import { api, useCurrency, useList, useMutate, useQueryState } from "@/lib/client";
-import { dateLong, dateUS, duration, money, pct } from "@/lib/format";
-import { STATUSES, statusOf } from "@/lib/status";
+import { dateLong, duration, money, pct } from "@/lib/format";
+import { ORDER_COLUMNS, ordersCsv } from "@/lib/order-csv";
+import { STATUSES } from "@/lib/status";
 import type { Client, Order } from "@/lib/types";
 
 const SORTS: Record<string, [string, (a: Order, b: Order) => number]> = {
@@ -20,17 +22,6 @@ const SORTS: Record<string, [string, (a: Order, b: Order) => number]> = {
   price: ["Price, high to low", (a, b) => b.salePrice - a.salePrice],
   profit: ["Profit, high to low", (a, b) => b.profit - a.profit],
 };
-
-function toCsv(rows: Order[]) {
-  const head = ["Number", "Date", "Name", "Status", "Paid", "Client", "Quantity", "Cost", "Price", "Tips", "Revenue", "Profit", "Net profit", "Margin %"];
-  const esc = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-  const lines = rows.map((o) =>
-    [o.number, dateUS(o.saleDate), o.name, statusOf(o.status).label, o.paid ? "yes" : "no", o.client?.name ?? "", o.quantity,
-      o.totalCost.toFixed(2), o.salePrice.toFixed(2), o.tips.toFixed(2), o.revenue.toFixed(2), o.profit.toFixed(2), o.netProfit.toFixed(2), o.marginPct.toFixed(1)]
-      .map(esc).join(","),
-  );
-  return [head.map(esc).join(","), ...lines].join("\n");
-}
 
 export default function OrdersPage() {
   const { data, isLoading } = useList<Order>("orders");
@@ -80,14 +71,6 @@ export default function OrdersPage() {
   const activeFilters = [status, payment !== "all", source, from, to, hidePersonal].filter(Boolean).length;
   const toggle = (id: string) => setSelected(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]);
 
-  const exportCsv = () => {
-    const blob = new Blob([toCsv(rows)], { type: "text/csv" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `orders-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(a.href);
-  };
 
   return (
     <div>
@@ -115,7 +98,13 @@ export default function OrdersPage() {
         </Select>
         <Segmented value={view} onChange={setView} options={[{ value: "table", label: "Table" }, { value: "cards", label: "Cards" }]} />
         <Link href="/en/production" className="inline-flex h-11 items-center gap-2 rounded-xl border border-border bg-card px-4 text-sm hover:bg-card-2"><KanbanSquare className="size-4" /> Kanban</Link>
-        <Button onClick={exportCsv} disabled={!rows.length}><Download className="size-4" /> CSV</Button>
+        <CsvTools
+          name="orders"
+          label="orders"
+          columns={ORDER_COLUMNS}
+          toCsv={() => ordersCsv(rows)}
+          onImport={async (rows) => (await api<{ imported: number }>("/api/orders/import", { method: "POST", json: { rows } })).imported}
+        />
       </div>
 
       {selected.length > 0 && (

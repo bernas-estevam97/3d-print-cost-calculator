@@ -32,7 +32,6 @@ export async function createWorkshop(db: PrismaClient, name: string) {
     data: [
       { workshopId, name: "Filaments", icon: "spool", kind: "filaments", builtIn: true, sort: 0, link: "/en/filaments" },
       { workshopId, name: "Keychain rings", icon: "key", kind: "rings", builtIn: true, sort: 1 },
-      { workshopId, name: "Paints", icon: "palette", kind: "paints", builtIn: true, sort: 2, comingSoon: true },
       { workshopId, name: "Finished models", icon: "box", kind: "finished", builtIn: true, sort: 3 },
     ],
   });

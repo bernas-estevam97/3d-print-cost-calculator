@@ -1,9 +1,9 @@
 "use client";
 import { useState } from "react";
-import { Field, Input, NumberInput, PhotoInput, Segmented, Select, Textarea } from "./ui";
+import { Field, Input, NumberInput, PhotoInput, Select, Textarea } from "./ui";
 
 export type Printer = {
-  id: string; manufacturer: string; model: string; internalName: string; technology: string; powerW: number; price: number;
+  id: string; manufacturer: string; model: string; internalName: string; powerW: number; price: number;
   lifetimeH: number; initialHours: number; hoursManual: number; note: string; photoUrl: string | null; favourite: boolean;
   groupId: string | null; group?: { name: string } | null; maintenanceIntervalHours: number | null; maintenanceIntervalDays: number | null;
   lastMaintenanceAt: string | null; lastMaintenanceHours: number;
@@ -12,27 +12,25 @@ export type Printer = {
 };
 
 // [DECISION] preset catalog (main doc 6.6): typical power draw and launch price, EUR.
-export const PRINTER_PRESETS: { name: string; manufacturer: string; model: string; powerW: number; price: number; technology: "FDM" | "SLA" }[] = [
-  { name: "Bambu Lab A1 mini", manufacturer: "Bambu Lab", model: "A1 mini", powerW: 150, price: 199, technology: "FDM" },
-  { name: "Bambu Lab A1", manufacturer: "Bambu Lab", model: "A1", powerW: 200, price: 339, technology: "FDM" },
-  { name: "Bambu Lab P1S", manufacturer: "Bambu Lab", model: "P1S", powerW: 300, price: 699, technology: "FDM" },
-  { name: "Bambu Lab X1 Carbon", manufacturer: "Bambu Lab", model: "X1 Carbon", powerW: 350, price: 1449, technology: "FDM" },
-  { name: "Bambu Lab H2D", manufacturer: "Bambu Lab", model: "H2D", powerW: 600, price: 1999, technology: "FDM" },
-  { name: "Prusa MK4S", manufacturer: "Prusa", model: "MK4S", powerW: 240, price: 799, technology: "FDM" },
-  { name: "Prusa Core One", manufacturer: "Prusa", model: "Core One", powerW: 300, price: 1199, technology: "FDM" },
-  { name: "Prusa MINI+", manufacturer: "Prusa", model: "MINI+", powerW: 160, price: 459, technology: "FDM" },
-  { name: "Creality Ender 3 V3", manufacturer: "Creality", model: "Ender 3 V3", powerW: 350, price: 299, technology: "FDM" },
-  { name: "Creality K1C", manufacturer: "Creality", model: "K1C", powerW: 350, price: 499, technology: "FDM" },
-  { name: "Creality K2 Plus", manufacturer: "Creality", model: "K2 Plus", powerW: 1200, price: 1499, technology: "FDM" },
-  { name: "Anycubic Kobra 3", manufacturer: "Anycubic", model: "Kobra 3", powerW: 400, price: 349, technology: "FDM" },
-  { name: "ELEGOO Centauri Carbon", manufacturer: "ELEGOO", model: "Centauri Carbon", powerW: 350, price: 299, technology: "FDM" },
-  { name: "Qidi Plus4", manufacturer: "Qidi", model: "Plus4", powerW: 1000, price: 799, technology: "FDM" },
-  { name: "ELEGOO Saturn 4 Ultra", manufacturer: "ELEGOO", model: "Saturn 4 Ultra", powerW: 120, price: 399, technology: "SLA" },
-  { name: "Anycubic Photon Mono M7", manufacturer: "Anycubic", model: "Photon Mono M7", powerW: 100, price: 299, technology: "SLA" },
+export const PRINTER_PRESETS: { name: string; manufacturer: string; model: string; powerW: number; price: number }[] = [
+  { name: "Bambu Lab A1 mini", manufacturer: "Bambu Lab", model: "A1 mini", powerW: 150, price: 199 },
+  { name: "Bambu Lab A1", manufacturer: "Bambu Lab", model: "A1", powerW: 200, price: 339 },
+  { name: "Bambu Lab P1S", manufacturer: "Bambu Lab", model: "P1S", powerW: 300, price: 699 },
+  { name: "Bambu Lab X1 Carbon", manufacturer: "Bambu Lab", model: "X1 Carbon", powerW: 350, price: 1449 },
+  { name: "Bambu Lab H2D", manufacturer: "Bambu Lab", model: "H2D", powerW: 600, price: 1999 },
+  { name: "Prusa MK4S", manufacturer: "Prusa", model: "MK4S", powerW: 240, price: 799 },
+  { name: "Prusa Core One", manufacturer: "Prusa", model: "Core One", powerW: 300, price: 1199 },
+  { name: "Prusa MINI+", manufacturer: "Prusa", model: "MINI+", powerW: 160, price: 459 },
+  { name: "Creality Ender 3 V3", manufacturer: "Creality", model: "Ender 3 V3", powerW: 350, price: 299 },
+  { name: "Creality K1C", manufacturer: "Creality", model: "K1C", powerW: 350, price: 499 },
+  { name: "Creality K2 Plus", manufacturer: "Creality", model: "K2 Plus", powerW: 1200, price: 1499 },
+  { name: "Anycubic Kobra 3", manufacturer: "Anycubic", model: "Kobra 3", powerW: 400, price: 349 },
+  { name: "ELEGOO Centauri Carbon", manufacturer: "ELEGOO", model: "Centauri Carbon", powerW: 350, price: 299 },
+  { name: "Qidi Plus4", manufacturer: "Qidi", model: "Plus4", powerW: 1000, price: 799 },
 ];
 
 export const emptyPrinter = (): Partial<Printer> => ({
-  manufacturer: "", model: "", internalName: "", technology: "FDM", powerW: 200, price: 0, lifetimeH: 5000,
+  manufacturer: "", model: "", internalName: "", powerW: 200, price: 0, lifetimeH: 5000,
   initialHours: 0, hoursManual: 0, note: "", photoUrl: null, groupId: null,
 });
 
@@ -50,7 +48,7 @@ export function PrinterFields({ value, onChange, groups, showPreset = true, show
             onChange={(e) => {
               setPreset(e.target.value);
               const p = PRINTER_PRESETS.find((x) => x.name === e.target.value);
-              if (p) onChange({ ...value, manufacturer: p.manufacturer, model: p.model, powerW: p.powerW, price: p.price, technology: p.technology });
+              if (p) onChange({ ...value, manufacturer: p.manufacturer, model: p.model, powerW: p.powerW, price: p.price });
             }}
           >
             <option value="">Choose a printer...</option>
@@ -58,7 +56,6 @@ export function PrinterFields({ value, onChange, groups, showPreset = true, show
           </Select>
         </Field>
       )}
-      <Segmented value={value.technology ?? "FDM"} onChange={(v) => set("technology", v)} options={[{ value: "FDM", label: "FDM" }, { value: "SLA", label: "SLA" }]} />
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Manufacturer"><Input value={value.manufacturer ?? ""} onChange={(e) => set("manufacturer", e.target.value)} /></Field>
         <Field label="Model *"><Input value={value.model ?? ""} onChange={(e) => set("model", e.target.value)} required /></Field>

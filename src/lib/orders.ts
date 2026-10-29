@@ -21,7 +21,6 @@ export async function loadRefs(workshopId: string): Promise<CalcRefs> {
 }
 
 const newNumber = () => crypto.randomUUID().replace(/-/g, "").slice(0, 8).toUpperCase();
-const newToken = () => crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
 
 /** Snapshot of every money field plus the materials, from a calculator input. */
 function snapshot(calc: CalcInput, refs: CalcRefs) {
@@ -92,7 +91,8 @@ export async function createOrder(
   const { fields, materials, services } = snapshot(calc, refs);
   const status = calc.status as StatusKey;
   const now = new Date().toISOString();
-  const deduct = CONSUMING.includes(status);
+  // stock is taken as soon as the order is placed (owner's rule, replaces main doc 5.2's "at Printing")
+  const deduct = status !== "cancelled";
   const stockSale = calc.modelSource === "stock" && calc.finishedGoodId;
 
   return db.$transaction(async (tx) => {
@@ -101,9 +101,8 @@ export async function createOrder(
         ...fields,
         workshopId,
         number: newNumber(),
-        clientLinkToken: newToken(),
         status,
-        statusDates: JSON.stringify({ [status]: now, ...(deduct && status !== "printing" ? { printing: now } : {}) }),
+        statusDates: JSON.stringify({ [status]: now, ...(CONSUMING.includes(status) && status !== "printing" ? { printing: now } : {}) }),
         materialDeducted: deduct,
         saleDate: calc.saleDate ? new Date(calc.saleDate) : new Date(),
         dueDate: calc.dueDate ? new Date(calc.dueDate) : null,
@@ -127,8 +126,8 @@ export async function createOrder(
 }
 
 /**
- * Status transition with the material rule (main doc 5.2):
- * deduct once when reaching Printing or later; give back only on Cancelled.
+ * Status transition with the material rule: stock is taken when the order is placed,
+ * given back on Cancelled, and taken again if a cancelled order is reopened.
  * Stock is derived from materialDeducted, so repeating a transition can never deduct twice.
  */
 export async function setStatus(workshopId: string, id: string, status: StatusKey) {
@@ -140,9 +139,9 @@ export async function setStatus(workshopId: string, id: string, status: StatusKe
 
   let materialDeducted = order.materialDeducted;
   return db.$transaction(async (tx) => {
-    if (!materialDeducted && CONSUMING.includes(status)) {
+    if (CONSUMING.includes(status) && !dates.printing) dates.printing = dates[status];
+    if (!materialDeducted && status !== "cancelled") {
       materialDeducted = true;
-      if (!dates.printing) dates.printing = dates[status];
       if (calc) await moveShelfItems(tx, calc, -1);
     } else if (materialDeducted && status === "cancelled") {
       materialDeducted = false;
@@ -166,24 +165,36 @@ export async function deleteOrder(workshopId: string, id: string) {
   });
 }
 
-/** Re-run the stored calculation with today's prices (main doc 5.6). */
-export async function recalculate(workshopId: string, id: string) {
+/**
+ * Save an edited calculation over an existing order, re-priced with today's prices (main doc 5.6).
+ * Filament stock follows the replaced OrderMaterial rows; shelf items are swapped if already taken.
+ */
+export async function updateOrder(workshopId: string, id: string, calc: CalcInput) {
   const order = await db.order.findFirst({ where: { id, workshopId } });
   if (!order) throw new HttpError(404, "Not found");
-  const calc = parseJson<CalcInput | null>(order.calcInput, null);
-  if (!calc) throw new HttpError(400, "This order has no stored calculation");
-  calc.tips = order.tips;
+  const old = parseJson<CalcInput | null>(order.calcInput, null);
   const { fields, materials, services } = snapshot(calc, await loadRefs(workshopId));
-  return db.order.update({
-    where: { id },
-    data: {
-      ...fields,
-      name: order.name,
-      clientId: order.clientId,
-      materials: { deleteMany: {}, create: materials },
-      services: { deleteMany: {}, create: services },
-    },
+  // ponytail: finished-good stock is not re-adjusted when a stock sale's quantity changes
+  await db.$transaction(async (tx) => {
+    if (order.materialDeducted) {
+      if (old) await moveShelfItems(tx, old, 1);
+      await moveShelfItems(tx, calc, -1);
+    }
+    await tx.order.update({
+      where: { id },
+      data: {
+        ...fields,
+        saleDate: calc.saleDate ? new Date(calc.saleDate) : order.saleDate,
+        dueDate: calc.dueDate ? new Date(calc.dueDate) : null,
+        tags: JSON.stringify(calc.tags),
+        notes: calc.notes,
+        materials: { deleteMany: {}, create: materials },
+        services: { deleteMany: {}, create: services },
+      },
+    });
   });
+  if (calc.status !== order.status) await setStatus(workshopId, id, calc.status as StatusKey);
+  return { id };
 }
 
 /** Copy into a new Negotiation order; payment, tracking, due date and documents are not copied. */

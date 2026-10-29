@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { notFound, route } from "@/lib/api";
 import { db } from "@/lib/db";
-import { deleteOrder } from "@/lib/orders";
+import { calcSchema } from "@/lib/calc";
+import { deleteOrder, updateOrder } from "@/lib/orders";
 import { orderInclude } from "../route";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -58,4 +59,12 @@ export const DELETE = route<Ctx>(async (_req, ctx, auth) => {
   const { id } = await ctx.params;
   await deleteOrder(auth.workshopId, id);
   return { ok: true };
+});
+
+/** Save an order edited in the calculator. */
+export const PUT = route<Ctx>(async (req, ctx, auth) => {
+  const { id } = await ctx.params;
+  const { calc } = z.object({ calc: calcSchema }).parse(await req.json());
+  calc.includeLabor = true;
+  return updateOrder(auth.workshopId, id, calc);
 });

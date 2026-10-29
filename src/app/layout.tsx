@@ -3,7 +3,7 @@ import { Providers } from "@/components/providers";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "3D Print Pricing",
+  title: "Gori.Lab",
   description: "Cost calculator and CRM for 3D-printing workshops",
 };
 

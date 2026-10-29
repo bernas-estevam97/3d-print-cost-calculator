@@ -76,3 +76,9 @@ dialog[open] { animation: pop 160ms ease-out; }
 /* hide number spinners: they are tiny touch targets and fight with scroll */
 input[type="number"]::-webkit-inner-spin-button, input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 input[type="number"] { -moz-appearance: textfield; }
+
+/* Toast distance from the bottom edge; below md the bottom tab bar (56px + safe area) is in the way */
+:root { --toast-bottom: 32px; }
+@media (max-width: 767px) {
+  :root { --toast-bottom: calc(72px + env(safe-area-inset-bottom)); }
+}

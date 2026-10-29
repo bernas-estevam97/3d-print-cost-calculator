@@ -1,7 +1,7 @@
 "use client";
 // App shell: sidebar (desktop), bottom tab bar (mobile), top bar (main doc 3, 9.1).
 import {
-  BarChart3, Bell, Box, Calculator, CalendarDays, Check, ChevronDown, ClipboardList, FileText, Home, KanbanSquare,
+  BarChart3, Bell, Box, Calculator, Check, ChevronDown, ClipboardList, FileText, Home, KanbanSquare,
   LayoutDashboard, LogOut, Menu, Moon, MoreHorizontal, Package, PanelLeft, Printer, Search, Settings as SettingsIcon,
   Sun, SunMoon, User, Users, Wind,
 } from "lucide-react";
@@ -12,13 +12,12 @@ import { useEffect, useRef, useState } from "react";
 import { api, useApi, useCurrency, useMe, useSaveSettings, useSettings } from "@/lib/client";
 import { CURRENCIES } from "@/lib/format";
 import { useLocal } from "./data-table";
-import { Button, cn, Dialog, Input } from "./ui";
+import { Button, cn, Dialog, Input, Logo } from "./ui";
 
 export const NAV = [
   { href: "/en/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/en/calculator", label: "Calculator", icon: Calculator },
   { href: "/en/orders", label: "Orders", icon: ClipboardList },
-  { href: "/en/calendar", label: "Calendar", icon: CalendarDays },
   { href: "/en/production", label: "Kanban", icon: KanbanSquare },
   { href: "/en/clients", label: "Clients", icon: Users },
   { href: "/en/documents", label: "Documents", icon: FileText },
@@ -26,7 +25,7 @@ export const NAV = [
   { href: "/en/printers", label: "Printers", icon: Printer },
   { href: "/en/dryers", label: "Dryers", icon: Wind },
   { href: "/en/models", label: "Model Catalog", icon: Box },
-  { href: "/en/warehouse", label: "Warehouse", icon: Package },
+  { href: "/en/warehouse", label: "Stocks", icon: Package },
   { href: "/en/settings", label: "Settings", icon: SettingsIcon },
 ];
 const TABS = ["/en/dashboard", "/en/calculator", "/en/orders", "/en/production", "/en/clients"];
@@ -259,8 +258,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
     <div className="flex min-h-dvh">
       <aside className={cn("sticky top-0 hidden h-dvh shrink-0 flex-col border-r border-border bg-card md:flex", collapsed ? "w-16" : "w-60")}>
         <Link href="/en/dashboard" className="flex h-16 items-center gap-2 px-4 font-bold">
-          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-fg">3D</span>
-          {!collapsed && <span className="truncate">Print Pricing</span>}
+          <Logo className="size-8" />
+          {!collapsed && <span className="truncate">Gori.Lab</span>}
         </Link>
         <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 pb-4">
           {NAV.map((n) => (

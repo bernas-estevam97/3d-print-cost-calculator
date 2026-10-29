@@ -1,4 +1,4 @@
-# 3D Print Pricing (local edition)
+# Gori.Lab (local edition)
 
 Cost calculator and small CRM for a 3D-printing workshop. Price a print from a slicer file, turn it
 into an order, track it through production, manage clients, printers and filament stock, issue PDF
@@ -10,6 +10,7 @@ database); there are no API keys or cloud services.
 - Product spec: `3d-print-pricing-replica-instructions.md`
 - Local deployment decisions: `3d-print-pricing-local-build-instructions.md` (wins where the two differ)
 - Current state of the build, for anyone picking it up: `PROJECT_STATE.md`
+- Installing on another computer, step by step for non-developers: `INSTALL.md`
 
 ## Features
 
@@ -17,15 +18,17 @@ database); there are no API keys or cloud services.
   hand. Material, electricity, depreciation, labor, post-processing, services, taxes, marketplace fees
   and rounding. Four pricing modes (auto markup, fixed markup, target price, target profit).
 - **Orders**: saved with a snapshot of every price input, so later settings changes do not rewrite
-  history. Status flow from negotiation to done, repeat, recalculate, bulk actions, client share link.
-- **Kanban**: drag orders between statuses. Filament is deducted from stock once printing starts and
-  returned if the order is cancelled.
+  history. Status flow from negotiation to done, repeat, recalculate, bulk actions, tracking number, edit an order in the calculator.
+- **Kanban**: drag orders between statuses. Filament and stock items are taken from stock as soon as
+  an order is placed, and returned if the order is cancelled or deleted.
 - **Clients** with categories and loyalty levels; **printers** with usage hours and payback;
-  **dryers**; **model catalog**; **warehouse** with shelves, finished goods and write-offs; **filaments**
+  **dryers**; **model catalog**; **stocks** with shelves, finished goods and write-offs; **filaments**
   with stock forecasts and low-stock alerts.
-- **Calendar**, **documents** (quote, invoice, receipt, delivery note, contract, acceptance act as PDF),
+- **Documents** (quote, invoice, receipt, delivery note, contract, acceptance act as PDF),
   **analytics** and **dashboard**, global search, notifications.
 - Light/dark theme, accent colours, currency choice, works on phones.
+- CSV export/import on Clients, Orders, Filaments and each Stocks shelf (header row = field names,
+  so an exported file imports back unchanged).
 - Per-workshop JSON export/import and file-level backups.
 
 ## Run it
@@ -52,7 +55,7 @@ Same Wi-Fi: open `http://<this-PC's-IP>:3000`. Windows blocks it until you allow
 (elevated PowerShell, private networks only):
 
 ```powershell
-New-NetFirewallRule -DisplayName "3D Print Pricing" -Direction Inbound -LocalPort 3000 -Protocol TCP -Action Allow -Profile Private
+New-NetFirewallRule -DisplayName "Gori.Lab" -Direction Inbound -LocalPort 3000 -Protocol TCP -Action Allow -Profile Private
 ```
 
 Outside the network, a temporary public link through Cloudflare (run the production server first):
@@ -62,8 +65,7 @@ winget install --id Cloudflare.cloudflared   # once
 cloudflared tunnel --url http://localhost:3000
 ```
 
-Anyone with that link can register, so stop the tunnel (Ctrl+C) when done. For the order page's
-"Link for client" button, set `PUBLIC_BASE_URL` in `.env` to the public URL, then rebuild and restart.
+Anyone with that link can register, so stop the tunnel (Ctrl+C) when done.
 Tailscale is the alternative for private remote access. Details in the local build guide, section 8.
 
 ## Scripts
@@ -95,7 +97,7 @@ app rules such as returning stock, so prefer the app).
 
 - `src/lib/pricing.ts`: every cost and price formula. Pure; covered by `pricing.test.ts`.
 - `src/lib/calc.ts`: calculator form state to pricing input. Shared by the browser and the server.
-- `src/lib/orders.ts`: order rules: snapshots, status changes, stock deduction, repeat, recalculate.
+- `src/lib/orders.ts`: order rules: snapshots, status changes, stock deduction, edit, repeat.
 - `src/lib/entities.ts`: the plain CRUD entities behind `/api/[entity]`.
 - `src/lib/storage.ts`: the only code that touches uploaded files.
 - `src/app/en/*`: the pages; `src/app/api/*`: the JSON API.

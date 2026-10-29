@@ -1,16 +1,15 @@
 "use client";
-import { ArrowLeft, QrCode, Star, Trash2, Wrench } from "lucide-react";
+import { ArrowLeft, Star, Trash2, Wrench } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { PrinterFields, type Printer } from "@/components/printer-form";
-import { Badge, Bar, Button, Card, Field, Input, ListSkeleton, NumberInput, Segmented, StatusBadge, deleteWithUndo } from "@/components/ui";
+import { Bar, Button, Card, Field, Input, ListSkeleton, NumberInput, Segmented, StatusBadge, deleteWithUndo } from "@/components/ui";
 import { useApi, useCurrency, useList, useQueryState, useRemove, useSave } from "@/lib/client";
 import { dateDot, dateInput, duration, money } from "@/lib/format";
-import { printQr } from "@/lib/qr";
 import type { Order } from "@/lib/types";
 
-const EDITABLE = ["manufacturer", "model", "internalName", "technology", "powerW", "price", "lifetimeH", "initialHours", "hoursManual", "note", "photoUrl", "groupId"] as const;
+const EDITABLE = ["manufacturer", "model", "internalName", "powerW", "price", "lifetimeH", "initialHours", "hoursManual", "note", "photoUrl", "groupId"] as const;
 
 export default function PrinterDetail() {
   const { id } = useParams<{ id: string }>();
@@ -48,15 +47,12 @@ export default function PrinterDetail() {
         <div className="min-w-0 flex-1">
           <h1 className="text-2xl font-bold">{p.internalName || p.model}</h1>
           <div className="flex items-center gap-2 text-sm text-muted">
-            {p.manufacturer} {p.model} <Badge className="bg-accent/15 text-accent">{p.technology}</Badge>
+            {p.manufacturer} {p.model}
           </div>
         </div>
         <div className="flex gap-2">
           <Button size="icon" aria-label="Favourite" onClick={() => save.mutate({ id: p.id, favourite: !p.favourite })}>
             <Star className={`size-5 ${p.favourite ? "fill-accent text-accent" : ""}`} />
-          </Button>
-          <Button size="icon" aria-label="Print QR" onClick={() => printQr(p.id.slice(0, 8).toUpperCase(), p.internalName || p.model)}>
-            <QrCode className="size-5" />
           </Button>
           <Button size="icon" aria-label="Delete printer" onClick={() => deleteWithUndo(p.model, () => remove.mutate(p.id, { onSuccess: () => router.push("/en/printers") }))}>
             <Trash2 className="size-5 text-red-500" />

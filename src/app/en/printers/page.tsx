@@ -16,7 +16,6 @@ export default function PrintersPage() {
   const saveGroup = useSave<{ id: string; name: string }>("printer-groups", "Group created");
   const currency = useCurrency();
   const router = useRouter();
-  const [tech, setTech] = useState("all");
   const [q, setQ] = useState("");
   const [view, setView] = useLocal<"table" | "cards">("printers:view", "table");
   const [form, setForm] = useState<Partial<Printer> | null>(null);
@@ -24,7 +23,7 @@ export default function PrintersPage() {
 
   const all = data ?? [];
   const rows = all.filter(
-    (p) => (tech === "all" || p.technology === tech) && `${p.manufacturer} ${p.model} ${p.internalName}`.toLowerCase().includes(q.toLowerCase()),
+    (p) => `${p.manufacturer} ${p.model} ${p.internalName}`.toLowerCase().includes(q.toLowerCase()),
   );
   const due = all.filter((p) => p.maintenanceDue);
 
@@ -52,15 +51,6 @@ export default function PrintersPage() {
         </Link>
       ))}
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <Segmented
-          value={tech}
-          onChange={setTech}
-          options={[
-            { value: "all", label: `All ${all.length}` },
-            { value: "FDM", label: `FDM ${all.filter((p) => p.technology === "FDM").length}` },
-            { value: "SLA", label: `SLA ${all.filter((p) => p.technology === "SLA").length}` },
-          ]}
-        />
         <div className="relative min-w-48 flex-1">
           <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted" />
           <Input className="pl-9" placeholder="Search printers" value={q} onChange={(e) => setQ(e.target.value)} />
@@ -91,7 +81,6 @@ export default function PrintersPage() {
               ),
             },
             { key: "group", header: "Group", cell: (p) => p.group?.name ?? "—" },
-            { key: "tech", header: "Technology", cell: (p) => <Badge className="bg-accent/15 text-accent">{p.technology}</Badge> },
             {
               key: "status", header: "Status",
               cell: (p) => (p.maintenanceDue ? <Badge className="bg-amber-500/15 text-amber-500">Maintenance</Badge> : <Badge className="bg-green-500/15 text-green-500">Ready</Badge>),

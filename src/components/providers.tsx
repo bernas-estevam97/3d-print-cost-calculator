@@ -12,7 +12,8 @@ export function Providers({ children }: { children: React.ReactNode }) {
     <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
       <QueryClientProvider client={qc}>
         {children}
-        <Toaster position="top-right" richColors closeButton />
+        {/* bottom margin clears the mobile tab bar, see --toast-bottom in globals.css */}
+        <Toaster position="bottom-center" offset={{ bottom: "var(--toast-bottom)" }} mobileOffset={{ bottom: "var(--toast-bottom)" }} duration={2000} richColors closeButton />
       </QueryClientProvider>
     </ThemeProvider>
   );

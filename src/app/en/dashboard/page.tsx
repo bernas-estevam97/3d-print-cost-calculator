@@ -1,6 +1,6 @@
 "use client";
 // Dashboard, main doc 5.12.
-import { CalendarDays, Calculator, ClipboardList, FileText, Printer, TrendingDown, TrendingUp, Users } from "lucide-react";
+import { Calculator, ClipboardList, FileText, Printer, TrendingDown, TrendingUp, Users } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { BarList, MiniBars, MultiSeries } from "@/components/charts";
@@ -21,7 +21,6 @@ type Dash = {
   topMaterials: { total: number; items: { name: string; grams: number; color: string }[] };
   weekday: { day: string; orders: number; clients: number }[];
   events: { kind: string; text: string; date: string; href: string }[];
-  todos: { id: string; title: string; date: string }[];
   restock: { id: string; name: string; lastsDays: number; color: string }[];
 };
 
@@ -136,7 +135,7 @@ export default function DashboardPage() {
             </Card>
           </div>
 
-          <div className="grid gap-3 lg:grid-cols-3">
+          <div className="grid gap-3 lg:grid-cols-2">
             <Card title="Events">
               {d.events.length === 0 ? <p className="text-sm text-muted">Nothing yet</p> : (
                 <ul className="space-y-2 text-sm">
@@ -145,14 +144,6 @@ export default function DashboardPage() {
                   ))}
                 </ul>
               )}
-            </Card>
-            <Card title="To-do">
-              {d.todos.length === 0 ? (
-                <div className="text-sm text-muted">No tasks planned</div>
-              ) : (
-                <ul className="space-y-2 text-sm">{d.todos.map((t) => <li key={t.id} className="flex justify-between gap-2"><span>{t.title}</span><span className="text-xs text-muted">{dateDot(t.date)}</span></li>)}</ul>
-              )}
-              <Link href="/en/calendar" className="mt-3 inline-flex items-center gap-1 text-sm text-accent"><CalendarDays className="size-4" /> Open calendar</Link>
             </Card>
             <Card title="Restock this week">
               {d.restock.length === 0 ? <p className="text-sm text-muted">Nothing to restock</p> : (

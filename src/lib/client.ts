@@ -71,7 +71,7 @@ export function useRemove(entity: string, okMsg = "Deleted") {
 }
 
 export type Settings = {
-  printTechnology: string; electricityEnabled: boolean; electricityMode: string; electricityTariff: number;
+  electricityEnabled: boolean; electricityMode: string; electricityTariff: number;
   operatorRate: number; modelingRate: number; paintingRate: number; defaultMarkupPct: number;
   mbMaterial: boolean; mbLabor: boolean; mbWarehouse: boolean; mbPackagingDelivery: boolean; mbElectricity: boolean;
   mbAmortization: boolean; mbConsumables: boolean; deductTaxes: boolean; deductMarketplace: boolean; deductAcquiring: boolean;

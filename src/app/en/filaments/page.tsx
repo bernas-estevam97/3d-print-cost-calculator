@@ -1,13 +1,15 @@
 "use client";
 // Warehouse > Filaments, main doc 6.10.
-import { ChevronRight, CheckSquare, Plus, Scale, Search, Trash2, Upload, X } from "lucide-react";
+import { ChevronRight, CheckSquare, Plus, Scale, Search, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
+import { CsvTools } from "@/components/csv-tools";
 import { DataTable, useLocal } from "@/components/data-table";
 import {
   Badge, Button, ColorDot, Dialog, EmptyState, Field, Input, ListSkeleton, NumberInput, PageHeader, PhotoInput, Segmented, Select, deleteWithUndo,
 } from "@/components/ui";
 import { api, useCurrency, useList, useMutate, useQueryState, useRemove, useSave } from "@/lib/client";
+import { num, toCsv } from "@/lib/csv";
 import { grams, money } from "@/lib/format";
 import type { Filament } from "@/lib/types";
 
@@ -18,24 +20,26 @@ const blank = (): Partial<Filament> => ({
   usedFromSpoolG: 0, colors: ["#ffffff"], photoUrl: null, lowStockThresholdG: null,
 });
 
-/** Minimal CSV parser: commas or semicolons, double-quoted fields. */
-function parseCsv(text: string): Record<string, string>[] {
-  const lines = text.replace(/\r/g, "").split("\n").filter((l) => l.trim());
-  const sep = (lines[0]?.match(/;/g)?.length ?? 0) > (lines[0]?.match(/,/g)?.length ?? 0) ? ";" : ",";
-  const split = (l: string) => {
-    const out: string[] = [];
-    let cur = "", q = false;
-    for (let i = 0; i < l.length; i++) {
-      const c = l[i];
-      if (c === '"') { if (q && l[i + 1] === '"') { cur += '"'; i++; } else q = !q; }
-      else if (c === sep && !q) { out.push(cur); cur = ""; }
-      else cur += c;
-    }
-    out.push(cur);
-    return out.map((s) => s.trim());
-  };
-  const [head, ...rows] = lines.map(split);
-  return rows.map((r) => Object.fromEntries((head ?? []).map((h, i) => [h, r[i] ?? ""])));
+// CSV: the editable fields; colors are space-separated hex codes. Older files with one "color" column still import.
+// usedFromSpoolG is exported as everything used so far (manual + orders), so the imported copy shows the same stock.
+const FILAMENT_FIELDS = ["name", "brand", "type", "modifier", "spoolPrice", "spoolWeightG", "spoolCount", "lowStockThresholdG", "purchaseLink"] as const;
+const FILAMENT_COLUMNS = [...FILAMENT_FIELDS, "usedFromSpoolG", "colors"];
+const filamentsCsv = (rows: Filament[]) =>
+  toCsv(FILAMENT_COLUMNS, rows.map((f) => [...FILAMENT_FIELDS.map((k) => f[k]), f.spoolCount * f.spoolWeightG - f.stockG, f.colors.join(" ")]));
+
+async function importFilaments(rows: Record<string, string>[]) {
+  for (const r of rows) {
+    const colors = (r.colors ?? r.color ?? "").split(/[\s|]+/).filter(Boolean).map((c) => (c.startsWith("#") ? c : `#${c}`));
+    await api("/api/filaments", {
+      method: "POST",
+      json: {
+        name: r.name ?? "", brand: r.brand ?? "", type: r.type || "PLA", modifier: r.modifier || null, purchaseLink: r.purchaseLink || null, colors,
+        spoolPrice: num(r.spoolPrice), spoolWeightG: num(r.spoolWeightG, 1000), spoolCount: num(r.spoolCount, 1), usedFromSpoolG: num(r.usedFromSpoolG),
+        lowStockThresholdG: r.lowStockThresholdG ? num(r.lowStockThresholdG) : null,
+      },
+    });
+  }
+  return rows.length;
 }
 
 function FilamentForm({ value, onChange, catalogs }: { value: Partial<Filament>; onChange: (f: Partial<Filament>) => void; catalogs: CatalogItem[] }) {
@@ -132,20 +136,6 @@ export default function FilamentsPage() {
   const bulkDelete = useMutate<string[]>(async (ids) => {
     for (const id of ids) await api(`/api/filaments/${id}`, { method: "DELETE" });
   }, "Deleted");
-  const importCsv = useMutate<File, number>(async (file) => {
-    const rows = parseCsv(await file.text());
-    const n = (s: string | undefined, d: number) => (s ? parseFloat(s.replace(",", ".")) || d : d);
-    for (const r of rows) {
-      await api("/api/filaments", {
-        method: "POST",
-        json: {
-          name: r.name ?? "", brand: r.brand ?? "", type: r.type || "PLA", colors: r.color ? [r.color.startsWith("#") ? r.color : `#${r.color}`] : [],
-          spoolPrice: n(r.spoolPrice, 0), spoolWeightG: n(r.spoolWeightG, 1000), spoolCount: n(r.spoolCount, 1),
-        },
-      });
-    }
-    return rows.length;
-  }, (count) => `${count} filaments imported`);
 
   const all = data ?? [];
   const rows = all.filter((f) => (!type || f.type === type) && `${f.name} ${f.brand} ${f.type}`.toLowerCase().includes(q.toLowerCase()));
@@ -163,17 +153,14 @@ export default function FilamentsPage() {
   return (
     <div>
       <nav className="mb-1 flex items-center gap-1 text-sm text-muted">
-        <Link href="/en/warehouse" className="hover:text-fg">Warehouse</Link> <ChevronRight className="size-4" /> Filaments
+        <Link href="/en/warehouse" className="hover:text-fg">Stocks</Link> <ChevronRight className="size-4" /> Filaments
       </nav>
       <PageHeader
         title="Filaments"
-        info="Stock is reduced automatically when an order reaches Printing"
+        info="Stock is reduced automatically when an order is placed"
         actions={
           <>
-            <label className="inline-flex h-11 cursor-pointer items-center gap-2 rounded-xl border border-border bg-card px-4 text-sm font-medium hover:bg-card-2">
-              <Upload className="size-4" /> Import CSV
-              <input type="file" accept=".csv,text/csv" className="sr-only" onChange={(e) => { const f = e.target.files?.[0]; if (f) importCsv.mutate(f); e.target.value = ""; }} />
-            </label>
+            <CsvTools name="filaments" label="filaments" columns={FILAMENT_COLUMNS} toCsv={() => filamentsCsv(rows)} onImport={importFilaments} />
             <Button variant="primary" onClick={() => setForm(blank())}><Plus className="size-4" /> New filament</Button>
           </>
         }
@@ -253,7 +240,6 @@ export default function FilamentsPage() {
         {form && <FilamentForm value={form} onChange={setForm} catalogs={catalogs} />}
       </Dialog>
       <SpoolCalc open={spoolCalc} onClose={() => setSpoolCalc(false)} />
-      <p className="mt-4 text-xs text-muted">CSV columns: name, brand, type, color, spoolPrice, spoolWeightG, spoolCount</p>
     </div>
   );
 }

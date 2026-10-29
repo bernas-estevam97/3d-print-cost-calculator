@@ -5,7 +5,7 @@ Handover document for an agent or developer continuing this project. Read this f
 
 ## 1. What this is
 
-A local replica of a 3D-printing workshop pricing app: cost calculator + order management + small
+Gori.Lab: a local replica of a 3D-printing workshop pricing app: cost calculator + order management + small
 CRM + stock + documents + analytics. Single machine, Next.js + SQLite, multi-account (each account owns
 one workshop; every row is scoped by `workshopId`).
 
@@ -16,7 +16,7 @@ Source of truth for behaviour:
 - `3d-print-pricing-local-build-instructions.md` (local deployment decisions). It wins on conflicts.
 
 Spec edits already made: section 2 (DB provider decision, uploads through `lib/storage.ts`, slicer file
-retention), 6.3 (QR scanner optional, not in v1; client share link needs a public URL), new 9.1
+retention), 6.3 (QR scanner optional, not in v1), new 9.1
 (mobile/interaction requirements), 10 (acceptance check 5). The local guide was switched from pnpm to
 npm, `seed:demo` marked dev-only, and backup uses `node:sqlite`.
 
@@ -36,6 +36,18 @@ Feature-complete against the spec for v1. All checks green as of the last sessio
 Known deliberate deviation: dashboard "In progress" shows 3 on the seed data, not the spec's observed 0,
 because the code follows the spec's written formula (statuses 2 to 7).
 
+Owner decisions that override the spec:
+- Stock (filament and stock shelf items) is taken when an order is placed, in any status except
+  Cancelled, not at Printing (spec 5.2). Cancelling returns it; reopening takes it again. `CONSUMING`
+  now only means "printed" (printer hours, print-time analytics). This also shifts the seed acceptance
+  numbers for stock.
+- FDM only: SLA and every technology field/filter were removed (migration `remove_sla`).
+- No QR codes anywhere (print buttons, order QR card and the `qrcode` package removed).
+- The UI calls the warehouse "Stocks"; the route stays `/en/warehouse` and code names keep "warehouse".
+- App name "Gori.Lab"; logo `public/gorilab.png` (transparent PNG), shown by `Logo` in `ui.tsx` as a
+  CSS-cropped flask on a `bg-accent` tile so it follows the chosen accent. `src/app/icon.png` is the favicon.
+- Toasts: bottom-centre, 2 s, offset by `--toast-bottom` to clear the mobile tab bar.
+
 Database state: demo account removed (backup taken first at `backup/2026-10-29T16-03-32`). One real
 account remains (the owner's). The app was shared through a Cloudflare quick tunnel so a colleague can
 register and test.
@@ -52,7 +64,7 @@ Git: repo initialised on `main`, files staged, **no commit yet**.
 | ESLint | 9.39.5 | ESLint 10 tried and reverted: eslint-config-next plugins support 9 only. |
 | Prisma | 7.10.1 | With `@prisma/adapter-better-sqlite3` + better-sqlite3. Client generated to `src/generated/` (gitignored, `postinstall` regenerates). Prisma 8 is only an rc. |
 | Tailwind | 4 | Tokens in `src/app/globals.css`. |
-| Others | | zod 4, @tanstack/react-query 5, @dnd-kit, recharts 3, @react-pdf/renderer, fflate, qrcode, date-fns, bcryptjs, iron-session, next-themes, sonner, lucide-react, clsx, tailwind-merge |
+| Others | | zod 4, @tanstack/react-query 5, @dnd-kit, recharts 3, @react-pdf/renderer, fflate, date-fns, bcryptjs, iron-session, next-themes, sonner, lucide-react, clsx, tailwind-merge |
 | Dev | | vitest 5, tsx, @types/node 24 |
 
 Package manager: npm. Node 24 LTS.
@@ -63,7 +75,7 @@ Package manager: npm. Node 24 LTS.
   `turbopack.root: process.cwd()`, a CSS loader rule.
 - `prisma.config.ts`: loads `.env` with `process.loadEnvFile()`, seed command `tsx prisma/seed.ts`.
 - `.env` (gitignored; template `.env.example`): `DATABASE_URL="file:./prisma/dev.db"`,
-  `SESSION_SECRET`, `UPLOAD_DIR="./uploads"`, `MAX_UPLOAD_MB=50`, `PUBLIC_BASE_URL`.
+  `SESSION_SECRET`, `UPLOAD_DIR="./uploads"`, `MAX_UPLOAD_MB=50`.
 - `vitest.config.mts`: `@` alias to `src`.
 - npm scripts: `dev` (`next dev -H 0.0.0.0`), `build`, `start` (`next start -H 0.0.0.0 -p 3000`),
   `lint`, `test`, `typecheck`, `postinstall` (`prisma generate`), `backup`, `check:seed`, `seed:demo`.
@@ -109,48 +121,47 @@ errors. `publicRoute()` is used for the unauthenticated public order page. Pages
   sent (works around zod 4 filling defaults).
 - `lib/derive.ts`: computed values: filament stock and "lasts N days", printer stats (hours, payback
   from net profit), client loyalty levels.
-- `lib/orders.ts`: `loadRefs`, `createOrder` (stores a full pricing snapshot), `setStatus` (deducts
-  filament once when entering a `CONSUMING` status, returns it on cancel), `deleteOrder`,
-  `recalculate`, `repeatOrder`, `addService`.
+- `lib/orders.ts`: `loadRefs`, `createOrder` (stores a full pricing snapshot), `setStatus` (stock is
+  taken once while the order is not cancelled, returned on cancel), `deleteOrder`,
+  `repeatOrder`, `updateOrder` (save an order edited in the calculator, `PUT /api/orders/[id]`), `addService`.
 - `lib/analytics.ts`: `analytics(workshopId, from, to)` and `dashboard(workshopId, range)`. Revenue and
   profit count PAID orders only. `ORDER_CAP = 5000`.
 - `lib/backup.ts`: per-workshop JSON export/import.
 - `lib/documents.tsx`: document types and numbering `QT/INV/RC/DN/CT/AC-YYYY-NNNN`, totals, PDF
   rendering with @react-pdf/renderer.
 - `lib/bootstrap.ts`: `createWorkshop` seeds a new workshop: default settings, tax regimes (IVA 23 %
-  default), catalogs, built-in warehouse shelves.
+  default), catalogs, built-in stock shelves.
 
 ### Data model (`prisma/schema.prisma`)
 
 User, Workshop, Settings, TaxRegime, MarketplaceFee, LoyaltyTier, CatalogItem, PrinterGroup, Printer,
 Dryer, Filament, ClientCategory, Client, ModelGroup, Model, ModelFilament, Order, OrderMaterial,
-OrderService, WarehouseShelf, ShelfItem, FinishedGood, WriteOff, CalendarEvent, Document,
+OrderService, WarehouseShelf, ShelfItem, FinishedGood, WriteOff, Document,
 CompanyDetails, CalcTemplate, CalcDraft. Everything hangs off Workshop with `onDelete: Cascade`, so
-deleting a workshop removes all its rows. One migration: `prisma/migrations/20261029144721_init`.
+deleting a workshop removes all its rows. Migrations: `20261029144721_init`, `20261029221200_remove_sla`,
+`20261030090000_remove_calendar_paints_client_link`.
 
 ### API routes (`src/app/api/`)
 
 auth/login (in-memory rate limit), auth/register, auth/logout; me (GET/PATCH/DELETE: profile, password,
 notification prefs, account deletion); settings; company-details; upload; `files/[...path]`
 (authenticated file serving); orders, `orders/[id]`, `orders/[id]/status`, `orders/[id]/repeat`,
-`orders/[id]/recalculate`, `orders/[id]/services`, orders/bulk, orders/service;
-`public/order/[token]`; calculator/refs, calculator/warehouse; documents, `documents/[id]`,
+`orders/[id]/services`, orders/bulk, orders/service, orders/import (CSV rows);
+calculator/refs, calculator/warehouse; documents, `documents/[id]`,
 `documents/[id]/pdf`; analytics; dashboard; search (accent-insensitive); notifications; export;
-import; app-config; `[entity]` and `[entity]/[id]` (generic CRUD).
+import; `[entity]` and `[entity]/[id]` (generic CRUD).
 
 ### Pages (`src/app/`)
 
 - `login`: sign in / "Create a workshop" registration. No demo hint.
-- `public/order/[token]`: client-facing order status page (no login).
 - `en/dashboard`: KPIs with sparklines (week/month), status funnel, restock list, quick actions.
 - `en/calculator`: slicer file drop, materials, printer, labor, services, pricing mode, live result,
   templates and drafts, save as order.
 - `en/orders` and `en/orders/[id]`: table with filters and bulk actions; detail with status stepper,
-  materials, services, documents, repeat/recalculate, client link + QR.
+  materials, services, documents, repeat, "Edit order" (reopens the calculator prefilled via `?order=<id>`; hidden for CSV-imported orders, which have no calculator input), tracking number.
 - `en/production`: Kanban board (@dnd-kit) by status.
-- `en/calendar`: events with repetition, order due dates.
 - `en/clients` and `en/clients/[id]`; `en/printers` and `en/printers/[id]`; `en/dryers`; `en/models`.
-- `en/warehouse` (shelves, finished goods, write-offs) and `en/filaments` (stock, forecasts).
+- `en/warehouse`, shown as "Stocks" (shelves, finished goods, write-offs) and `en/filaments` (stock, forecasts).
 - `en/documents`: create and download PDFs; company details.
 - `en/analytics`: period picker, four tabs, CSV export.
 - `en/settings`: tabs General (sub-tabs Calculations, Catalogs, Taxes, Loyalty, Maintenance), Sync,
@@ -186,15 +197,31 @@ import; app-config; `[entity]` and `[entity]/[id]` (generic CRUD).
    from the login page, `seed` was renamed to `seed:demo` and marked dev-only. Dashboard empty restock
    text is now "Nothing to restock".
 5. Git init + `.gitignore` rewrite; README refreshed; this file added.
+6. Recalculate replaced by Edit order (calculator `?order=<id>`, `PUT /api/orders/[id]`, `updateOrder`).
+7. Stock taken at order placement; existing open orders back-filled once. Warehouse renamed Stocks in
+   the UI. SLA, QR removed. Renamed to Gori.Lab with the new logo. Toasts moved and shortened.
+8. Calendar removed (page, nav, `CalendarEvent` table, dashboard To-do card); order dates and every
+   other date field untouched. Paints "coming soon" shelf removed. "Link for client" removed (public
+   order page and API, `app-config`, `clientLinkToken`, `PUBLIC_BASE_URL`); tracking number kept.
+9. CSV export/import: `lib/csv.ts` (format, parser, BOM, `;` and decimal-comma tolerant),
+   `components/csv-tools.tsx` (buttons), `lib/order-csv.ts` (order columns, materials/services as JSON
+   cells). Clients, filaments and shelves import through the normal `/api/<entity>` POST; orders through
+   `POST /api/orders/import` as snapshots (client matched/created by name, printer matched by name,
+   materials not linked to filaments so stock does not move). Export uses the current filtered list.
+   Filament export writes total used grams in `usedFromSpoolG` so the copy shows the same stock.
+10. `INSTALL.md` added (non-developer install guide, tested on a fresh copy). Removed the unused direct
+   `better-sqlite3@13` dependency: v13 has no prebuilt binaries and failed `npm install` on machines
+   without Visual Studio build tools. The app uses the Prisma adapter's own prebuilt v12; the Prisma
+   CLI's v13 is an optional peer now, so a failed compile there is skipped.
 
 ## 7. Conventions and gotchas
 
 - Read the Next.js docs bundled in `node_modules/next/dist/docs/` before touching framework APIs;
   this Next version differs from older training data (`proxy.ts`, async params, Turbopack).
 - Every query must filter by the session's `workshopId`. Never trust IDs from the client without it.
-- Orders store snapshots. Changing settings must not change saved orders unless the user clicks
-  Recalculate.
-- Stock moves only through `setStatus` / `deleteOrder` in `lib/orders.ts`. Raw DB edits (Prisma Studio)
+- Orders store snapshots. Changing settings must not change saved orders unless the user edits
+  and re-saves the order (Edit order, which re-prices with current prices).
+- Stock moves only through `setStatus` / `updateOrder` / `deleteOrder` in `lib/orders.ts`. Raw DB edits (Prisma Studio)
   bypass this.
 - Uploaded files go only through `lib/storage.ts`; never put them in `public/`.
 - Charts: one series uses the accent; several series use `--series-N` in fixed order; no dual axes.
@@ -207,7 +234,6 @@ import; app-config; `[entity]` and `[entity]/[id]` (generic CRUD).
 ## 8. Open items / ideas (not started)
 
 - First git commit.
-- QR scanner (spec says optional, not in v1).
 - Email notifications (only in-app notifications exist in the local version).
 - Changing account email (not available locally).
 - A stable public URL instead of the temporary Cloudflare quick tunnel, if remote use continues.

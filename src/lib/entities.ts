@@ -36,11 +36,6 @@ const money = z.coerce.number().min(0).default(0);
 const nullableNum = z.coerce.number().nullable().optional();
 const nullableId = z.string().nullable().optional();
 const jsonArray = z.array(z.string()).default([]).transform((a) => JSON.stringify(a));
-const parseArrays = (keys: string[]) => (r: Row) => {
-  const out: Row = { ...r };
-  for (const k of keys) out[k] = parseJson(r[k] as string, []);
-  return out;
-};
 
 export const ENTITIES: Record<string, Entity> = {
   "printer-groups": { model: "printerGroup", schema: z.object({ name: str.min(1) }), orderBy: { name: "asc" } },
@@ -53,7 +48,6 @@ export const ENTITIES: Record<string, Entity> = {
       manufacturer: optStr,
       model: str.min(1, "Model is required"),
       internalName: optStr,
-      technology: z.enum(["FDM", "SLA"]).default("FDM"),
       powerW: z.coerce.number().min(0).default(200),
       price: money,
       lifetimeH: z.coerce.number().positive().default(5000),
@@ -148,7 +142,6 @@ export const ENTITIES: Record<string, Entity> = {
       photoUrl: z.string().nullable().optional(),
       fileUrl: z.string().nullable().optional(),
       sourceLink: optStr,
-      technology: z.enum(["FDM", "SLA"]).default("FDM"),
       groupId: nullableId,
       printTimeMin: money,
       extraCosts: money,
@@ -181,7 +174,7 @@ export const ENTITIES: Record<string, Entity> = {
       name: str.min(1),
       icon: optStr,
       link: optStr,
-      kind: z.enum(["custom", "finished", "rings", "paints", "filaments"]).default("custom"),
+      kind: z.enum(["custom", "finished", "rings", "filaments"]).default("custom"),
       hidden: z.boolean().default(false),
       photoUrl: z.string().nullable().optional(),
     }),
@@ -225,25 +218,6 @@ export const ENTITIES: Record<string, Entity> = {
         await db.filament.update({ where: { id: w.refId as string }, data: { usedFromSpoolG: { increment: w.quantity as number } } });
       }
     },
-  },
-  events: {
-    model: "calendarEvent",
-    orderBy: { date: "asc" },
-    schema: z.object({
-      title: str.min(1, "Title is required"),
-      description: optStr,
-      type: z.enum(["todo", "order", "reminder", "appointment"]).default("todo"),
-      color: str.default("#f97316"),
-      date: z.coerce.date(),
-      allDay: z.boolean().default(true),
-      repeat: z.enum(["none", "daily", "weekly", "monthly"]).default("none"),
-      startTime: optStr,
-      endTime: optStr,
-      tags: jsonArray,
-      done: z.boolean().default(false),
-      orderId: nullableId,
-    }),
-    enrich: async (rows) => rows.map(parseArrays(["tags"])),
   },
   "tax-regimes": {
     model: "taxRegime",

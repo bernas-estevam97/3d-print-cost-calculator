@@ -51,7 +51,6 @@ model Workshop {
   finishedGoods   FinishedGood[]
   shelfItems      ShelfItem[]
   writeOffs       WriteOff[]
-  events          CalendarEvent[]
   documents       Document[]
   templates       CalcTemplate[]
   drafts          CalcDraft[]
@@ -61,7 +60,6 @@ model Settings {
   id                     String  @id @default(uuid())
   workshopId             String  @unique
   workshop               Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
-  printTechnology        String  @default("FDM")
   electricityEnabled     Boolean @default(true)
   electricityMode        String  @default("single")
   electricityTariff      Float   @default(0.17)
@@ -153,7 +151,6 @@ model Printer {
   manufacturer            String    @default("")
   model                   String
   internalName            String    @default("")
-  technology              String    @default("FDM")
   powerW                  Float     @default(200)
   price                   Float     @default(0)
   lifetimeH               Float     @default(5000)
@@ -262,7 +259,6 @@ model Model {
   photoUrl           String?
   fileUrl            String?
   sourceLink         String   @default("")
-  technology         String   @default("FDM")
   groupId            String?
   group              ModelGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
   printTimeMin       Float    @default(0)
@@ -341,13 +337,11 @@ model Order {
   marginPct          Float     @default(0)
   materialDeducted   Boolean   @default(false)
   statusDates        String      @default("{}")
-  clientLinkToken    String    @unique
   slicerFileUrl      String?
   // full calculator input, so "Recalculate" and "Repeat order" can re-run it
   calcInput          String      @default("{}")
   materials          OrderMaterial[]
   services           OrderService[]
-  events             CalendarEvent[]
   documents          Document[]
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
@@ -384,7 +378,6 @@ model WarehouseShelf {
   link       String   @default("")
   builtIn    Boolean  @default(false)
   kind       String   @default("custom")
-  comingSoon Boolean  @default(false)
   hidden     Boolean  @default(false)
   sort       Int      @default(0)
   photoUrl   String?
@@ -440,26 +433,6 @@ model WriteOff {
   updatedAt  DateTime @updatedAt
 }
 
-model CalendarEvent {
-  id          String   @id @default(uuid())
-  workshopId  String
-  workshop    Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
-  title       String
-  description String   @default("")
-  type        String   @default("todo")
-  color       String   @default("#f97316")
-  date        DateTime
-  allDay      Boolean  @default(true)
-  repeat      String   @default("none")
-  startTime   String   @default("")
-  endTime     String   @default("")
-  tags        String     @default("[]")
-  done        Boolean  @default(false)
-  orderId     String?
-  order       Order?   @relation(fields: [orderId], references: [id], onDelete: SetNull)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-}
 
 model Document {
   id         String   @id @default(uuid())

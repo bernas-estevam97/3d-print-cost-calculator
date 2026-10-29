@@ -22,7 +22,7 @@ type PrinterRow = { id: string; model: string; internalName: string; hoursUsed: 
 const MARKUP_BASE: [keyof Settings, string, string][] = [
   ["mbMaterial", "Material", "Filament and resin cost"],
   ["mbLabor", "Labor", "Operator, modeling and painting hours"],
-  ["mbWarehouse", "Warehouse", "Items taken from warehouse shelves"],
+  ["mbWarehouse", "Stock items", "Items taken from stock shelves"],
   ["mbPackagingDelivery", "Packaging and delivery", "Packaging and delivery costs"],
   ["mbElectricity", "Electricity", "Printer and dryer power use"],
   ["mbAmortization", "Printer and dryer amortization", "Wear of the equipment per hour"],
@@ -42,10 +42,6 @@ function Calculations() {
 
   return (
     <div className="max-w-3xl space-y-4">
-      <Card title="Print technology">
-        <Segmented value={s.printTechnology} onChange={(v) => set("printTechnology", v)} options={[{ value: "BOTH", label: "Both" }, { value: "FDM", label: "FDM" }, { value: "SLA", label: "SLA" }]} />
-        <p className="mt-2 text-xs text-muted">Hides calculator sections that do not match. SLA (resin) pricing is not implemented in this version.</p>
-      </Card>
       <Card title="Electricity">
         <Segmented value={s.electricityMode} onChange={(v) => set("electricityMode", v)} options={[{ value: "single", label: "Single tariff" }, { value: "day_night", label: "Day / Night" }]} />
         {s.electricityMode === "day_night" && <p className="mt-2 text-xs text-amber-500">Day/Night tariffs are not supported yet; the single tariff below is used.</p>}
@@ -147,7 +143,6 @@ function Catalogs() {
           </Card>
         );
       })}
-      <p className="text-xs text-muted">Resin catalogs appear when SLA support is added.</p>
     </div>
   );
 }
@@ -310,7 +305,7 @@ function Sync() {
   return (
     <Card title="Sync settings" className="max-w-3xl">
       <p className="mb-4 text-sm text-muted">
-        Export markup, rates, taxes, commissions, loyalty tiers and catalogs as JSON. Orders, clients and warehouse are not included. Importing replaces these settings.
+        Export markup, rates, taxes, commissions, loyalty tiers and catalogs as JSON. Orders, clients and stocks are not included. Importing replaces these settings.
       </p>
       <div className="flex flex-wrap gap-2">
         <a download href="/api/export?scope=settings" className="inline-flex h-11 items-center gap-2 rounded-xl bg-accent px-4 text-sm font-medium text-accent-fg"><Download className="size-4" /> Export settings</a>
@@ -328,7 +323,7 @@ function Backups() {
     <div className="max-w-3xl space-y-4">
       <Card title="Full backup">
         <p className="mb-4 text-sm text-muted">
-          Everything in this workshop as one JSON file: settings, printers, filaments, clients, models, orders, warehouse, calendar and documents.
+          Everything in this workshop as one JSON file: settings, printers, filaments, clients, models, orders, stocks and documents.
           Uploaded photos and files are not inside it; back up the <code>uploads/</code> folder alongside (see <code>npm run backup</code>).
         </p>
         <div className="flex flex-wrap gap-2">
@@ -354,7 +349,7 @@ function About() {
   return (
     <Card title="About" className="max-w-3xl">
       <dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-2 text-sm">
-        <dt className="text-muted">App</dt><dd>3D Print Pricing (local edition)</dd>
+        <dt className="text-muted">App</dt><dd>Gori.Lab (local edition)</dd>
         <dt className="text-muted">Version</dt><dd>0.1.0</dd>
         <dt className="text-muted">Account</dt><dd>{me?.name} · {me?.email}</dd>
         <dt className="text-muted">Workshop</dt><dd>{me?.workshop.name}</dd>

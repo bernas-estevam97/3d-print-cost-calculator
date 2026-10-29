@@ -16,18 +16,18 @@ import { parseSlicerFile, SlicerError } from "@/lib/slicer";
 import type { Filament, Model } from "@/lib/types";
 
 type Form = {
-  id?: string; name: string; photoUrl: string | null; fileUrl: string | null; sourceLink: string; technology: string; groupId: string | null;
+  id?: string; name: string; photoUrl: string | null; fileUrl: string | null; sourceLink: string; groupId: string | null;
   printH: number; printM: number; extraCosts: number; pricePerPiece: number | null; complexity: string; sellAsProduct: boolean;
   productDescription: string; filaments: { filamentId: string | null; grams: number }[];
 };
 
 const blank = (): Form => ({
-  name: "", photoUrl: null, fileUrl: null, sourceLink: "", technology: "FDM", groupId: null, printH: 0, printM: 0, extraCosts: 0,
+  name: "", photoUrl: null, fileUrl: null, sourceLink: "", groupId: null, printH: 0, printM: 0, extraCosts: 0,
   pricePerPiece: null, complexity: "none", sellAsProduct: false, productDescription: "", filaments: [{ filamentId: null, grams: 0 }],
 });
 
 const toForm = (x: Model): Form => ({
-  id: x.id, name: x.name, photoUrl: x.photoUrl, fileUrl: x.fileUrl, sourceLink: x.sourceLink, technology: x.technology, groupId: x.groupId,
+  id: x.id, name: x.name, photoUrl: x.photoUrl, fileUrl: x.fileUrl, sourceLink: x.sourceLink, groupId: x.groupId,
   printH: Math.floor(x.printTimeMin / 60), printM: Math.round(x.printTimeMin % 60), extraCosts: x.extraCosts, pricePerPiece: x.pricePerPiece,
   complexity: x.complexity, sellAsProduct: x.sellAsProduct, productDescription: x.productDescription,
   filaments: x.filaments.length ? x.filaments.map((f) => ({ filamentId: f.filamentId, grams: f.grams })) : [{ filamentId: null, grams: 0 }],
@@ -90,7 +90,6 @@ function ModelDialog({ form, setForm, filaments, groups }: { form: Form | null; 
         </label>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Technology"><Segmented value={form.technology} onChange={(v) => set("technology", v)} options={[{ value: "FDM", label: "FDM" }, { value: "SLA", label: "SLA" }]} /></Field>
         <Field label="Group">
           <Select value={form.groupId ?? ""} onChange={(e) => set("groupId", e.target.value || null)}>
             <option value="">No group</option>
@@ -146,14 +145,13 @@ export default function ModelsPage() {
   const remove = useRemove("models");
   const currency = useCurrency();
   const [q, setQ] = useState("");
-  const [tech, setTech] = useState("all");
   const [group, setGroup] = useState("");
   const [view, setView] = useLocal<"table" | "cards">("models:view", "table");
   const [form, setForm] = useState<Form | null>(null);
   const [groupName, setGroupName] = useState<string | null>(null);
 
   const all = data ?? [];
-  const rows = all.filter((x) => (tech === "all" || x.technology === tech) && (!group || x.groupId === group) && x.name.toLowerCase().includes(q.toLowerCase()));
+  const rows = all.filter((x) => (!group || x.groupId === group) && x.name.toLowerCase().includes(q.toLowerCase()));
 
   return (
     <div>
@@ -173,7 +171,6 @@ export default function ModelsPage() {
           <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted" />
           <Input className="pl-9" placeholder="Search models" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
-        <Segmented value={tech} onChange={setTech} options={[{ value: "all", label: "All" }, { value: "FDM", label: "FDM" }, { value: "SLA", label: "SLA" }]} />
         {groups.length > 0 && (
           <Select className="w-40" aria-label="Group" value={group} onChange={(e) => setGroup(e.target.value)}>
             <option value="">All groups</option>
@@ -203,7 +200,6 @@ export default function ModelsPage() {
               </div>
             ) },
             { key: "group", header: "Group", cell: (x) => x.group?.name ?? "—" },
-            { key: "tech", header: "Technology", cell: (x) => <Badge className="bg-accent/15 text-accent">{x.technology}</Badge> },
             { key: "grams", header: "Material / pc", sort: (x) => x.materialPerPieceG, cell: (x) => `${Math.round(x.materialPerPieceG * 100) / 100} g` },
             { key: "time", header: "Print time", sort: (x) => x.printTimeMin, cell: (x) => duration(x.printTimeMin) },
             { key: "price", header: "Price / pc", sort: (x) => x.pricePerPiece ?? 0, cell: (x) => (x.pricePerPiece != null ? money(x.pricePerPiece, currency) : "—") },

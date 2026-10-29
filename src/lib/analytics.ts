@@ -4,7 +4,7 @@
 // - Personal-use and cancelled orders never count as sales.
 import { db, parseJson } from "./db";
 import { filamentsWithStock, printerStats, enrichPrinter } from "./derive";
-import { IN_PROGRESS, STATUSES, STEPPER } from "./status";
+import { CONSUMING, IN_PROGRESS, STATUSES, STEPPER, type StatusKey } from "./status";
 
 const DAY = 86_400_000;
 export const ORDER_CAP = 5000;
@@ -79,7 +79,7 @@ export async function analytics(workshopId: string, from: Date, to: Date) {
     ["Material", (o) => o.costMaterial], ["Electricity", (o) => o.costElectricity], ["Printer amortization", (o) => o.costPrinter],
     ["Consumables", (o) => o.costConsumables], ["Dryer amortization", (o) => o.costDryer], ["Packaging", (o) => o.costPackaging],
     ["Post-processing", (o) => o.costPostprocessing], ["Labor", (o) => o.costLabor], ["Delivery", (o) => o.costDelivery],
-    ["Warehouse items", (o) => o.costWarehouse], ["Other and services", (o) => o.costOther],
+    ["Stock items", (o) => o.costWarehouse], ["Other and services", (o) => o.costOther],
   ];
   const totalCost = sum(sales, (o) => o.totalCost);
   const costStructure = costParts
@@ -123,7 +123,7 @@ export async function analytics(workshopId: string, from: Date, to: Date) {
     }).length;
     return { week: `${start.getDate()}.${start.getMonth() + 1}`, count: n };
   });
-  const printed = orders.filter((o) => o.materialDeducted && !o.personalUse);
+  const printed = orders.filter((o) => CONSUMING.includes(o.status as StatusKey) && !o.personalUse);
   const printMin = (since: Date) => sum(printed.filter((o) => o.saleDate >= since), (o) => o.printTimeMin * o.quantity);
   const materialG = sum(period.filter((o) => o.materialDeducted), (o) => sum(o.materials, (m) => m.grams));
   const energy = lastMonths(12).map((k) => {
@@ -254,7 +254,6 @@ export async function dashboard(workshopId: string, range: "week" | "month") {
     ...orders.slice(0, 5).map((o) => ({ kind: "order", text: `New order ${o.name}`, date: o.saleDate, href: `/en/orders/${o.id}` })),
     ...clientRows.slice(0, 5).map((c) => ({ kind: "client", text: `New client ${c.name}`, date: c.createdAt, href: `/en/clients/${c.id}` })),
   ].sort((a, b) => b.date.getTime() - a.date.getTime()).slice(0, 5);
-  const todos = await db.calendarEvent.findMany({ where: { workshopId, type: "todo", done: false }, orderBy: { date: "asc" }, take: 5 });
 
   return {
     inProgress: orders.filter((o) => IN_PROGRESS.includes(o.status as never) && !o.personalUse).length,
@@ -267,7 +266,6 @@ export async function dashboard(workshopId: string, range: "week" | "month") {
     topMaterials: { total: sum([...matTotals.values()], (m) => m.grams), items: [...matTotals.entries()].sort((a, b) => b[1].grams - a[1].grams).slice(0, 5).map(([name, v]) => ({ name, ...v })) },
     weekday,
     events,
-    todos,
     restock: filaments.filter((f) => f.lastsDays != null && f.lastsDays <= 14).sort((a, b) => a.lastsDays! - b.lastsDays!).map((f) => ({ id: f.id, name: f.name, lastsDays: f.lastsDays, color: f.colors[0] })),
   };
 }

@@ -9,7 +9,7 @@ type AnyDelegate = { findMany(a: object): Promise<object[]>; createMany(a: objec
 const WS_TABLES = [
   "settings", "companyDetails", "taxRegime", "marketplaceFee", "loyaltyTier", "catalogItem", "printerGroup", "printer", "dryer",
   "filament", "clientCategory", "client", "modelGroup", "model", "warehouseShelf", "shelfItem", "finishedGood", "order",
-  "writeOff", "calendarEvent", "document", "calcTemplate", "calcDraft",
+  "writeOff", "document", "calcTemplate", "calcDraft",
 ] as const;
 const CHILD_TABLES = { modelFilament: "model", orderMaterial: "order", orderService: "order" } as const;
 const SETTINGS_TABLES = ["settings", "taxRegime", "marketplaceFee", "loyaltyTier", "catalogItem"] as const;
@@ -32,9 +32,15 @@ type Backup = Awaited<ReturnType<typeof exportData>>;
 
 /** Replaces the tables present in the file. Full backups replace everything; settings files only settings. */
 export async function importData(workshopId: string, file: Backup) {
-  if (file?.app !== "3d-print-pricing" || !file.data) throw new Error("Not a 3D Print Pricing backup file");
+  if (file?.app !== "3d-print-pricing" || !file.data) throw new Error("Not a Gori.Lab backup file");
   const tables = (file.scope === "full" ? WS_TABLES : SETTINGS_TABLES).filter((t) => file.data[t]);
-  const rewrite = (rows: object[]) => rows.map((r) => ({ ...r, workshopId }));
+  // older files may still carry the removed FDM/SLA technology columns
+  const rewrite = (rows: object[]) => rows.map((r) => {
+    const row: Record<string, unknown> = { ...r, workshopId };
+    delete row.technology;
+    delete row.printTechnology;
+    return row;
+  });
   await db.$transaction(
     async (tx) => {
       // children are removed by cascade when their parents go

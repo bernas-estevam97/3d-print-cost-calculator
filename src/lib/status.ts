@@ -17,7 +17,8 @@ export const STATUS_KEYS = STATUSES.map((s) => s.key) as [StatusKey, ...StatusKe
 export const STEPPER: StatusKey[] = ["negotiation", "confirmed", "printer_assigned", "printing", "packing", "delivery", "done"];
 // "In progress" on the dashboard: statuses 2 to 7 (main doc 5.12)
 export const IN_PROGRESS: StatusKey[] = ["confirmed", "printer_assigned", "printing", "print_error", "packing", "delivery"];
-// Statuses at or after Printing consume material (main doc 5.2)
+// Statuses at or after Printing: the order has been printed (printer hours, print-time analytics).
+// Stock is taken earlier, when the order is placed (lib/orders.ts).
 export const CONSUMING: StatusKey[] = ["printing", "packing", "delivery", "done", "closed"];
 
 export const statusOf = (key: string) => STATUSES.find((s) => s.key === key) ?? STATUSES[0];

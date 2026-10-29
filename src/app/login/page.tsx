@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { Button, Field, Input } from "@/components/ui";
+import { Button, Field, Input, Logo } from "@/components/ui";
 import { api } from "@/lib/client";
 
 export default function LoginPage() {
@@ -28,8 +28,8 @@ export default function LoginPage() {
     <div className="flex min-h-dvh items-center justify-center p-4">
       <form onSubmit={submit} className="w-full max-w-sm space-y-4 rounded-2xl border border-border bg-card p-6">
         <div className="flex items-center gap-2 text-lg font-bold">
-          <span className="flex size-9 items-center justify-center rounded-lg bg-accent text-accent-fg">3D</span>
-          Print Pricing
+          <Logo className="size-9" />
+          Gori.Lab
         </div>
         <h1 className="text-xl font-semibold">{mode === "login" ? "Sign in" : "Create your workshop"}</h1>
         {mode === "register" && (
