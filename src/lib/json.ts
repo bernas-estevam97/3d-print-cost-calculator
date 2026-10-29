@@ -1,0 +1,9 @@
+/** JSON stored in String columns (SQLite): parse with a fallback, never throw. Safe in the browser. */
+export function parseJson<T>(s: string | null | undefined, fallback: T): T {
+  if (!s) return fallback;
+  try {
+    return JSON.parse(s) as T;
+  } catch {
+    return fallback;
+  }
+}

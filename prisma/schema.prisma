@@ -1,0 +1,518 @@
+// Data model: main doc section 4. Local build: SQLite, money as Float,
+// enums as String (validated with zod), arrays and JSON blobs as String (Prisma SQLite Json defaults emit invalid SQL).
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         String   @default("owner")
+  avatarUrl    String?
+  notifyLowFilament Boolean @default(true)
+  notifyOverdue     Boolean @default(true)
+  workshopId   String
+  workshop     Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Workshop {
+  id        String   @id @default(uuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users           User[]
+  settings        Settings?
+  company         CompanyDetails?
+  taxRegimes      TaxRegime[]
+  marketplaceFees MarketplaceFee[]
+  loyaltyTiers    LoyaltyTier[]
+  catalogItems    CatalogItem[]
+  printerGroups   PrinterGroup[]
+  printers        Printer[]
+  dryers          Dryer[]
+  filaments       Filament[]
+  clientCategories ClientCategory[]
+  clients         Client[]
+  modelGroups     ModelGroup[]
+  models          Model[]
+  orders          Order[]
+  shelves         WarehouseShelf[]
+  finishedGoods   FinishedGood[]
+  shelfItems      ShelfItem[]
+  writeOffs       WriteOff[]
+  events          CalendarEvent[]
+  documents       Document[]
+  templates       CalcTemplate[]
+  drafts          CalcDraft[]
+}
+
+model Settings {
+  id                     String  @id @default(uuid())
+  workshopId             String  @unique
+  workshop               Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  printTechnology        String  @default("FDM")
+  electricityEnabled     Boolean @default(true)
+  electricityMode        String  @default("single")
+  electricityTariff      Float   @default(0.17)
+  operatorRate           Float   @default(0)
+  modelingRate           Float   @default(0)
+  paintingRate           Float   @default(0)
+  defaultMarkupPct       Float   @default(30)
+  // markup base toggles, see main doc 4.1
+  mbMaterial             Boolean @default(true)
+  mbLabor                Boolean @default(true)
+  mbWarehouse            Boolean @default(true)
+  mbPackagingDelivery    Boolean @default(true)
+  mbElectricity          Boolean @default(true)
+  mbAmortization         Boolean @default(true)
+  mbConsumables          Boolean @default(true)
+  deductTaxes            Boolean @default(true)
+  deductMarketplace      Boolean @default(true)
+  deductAcquiring        Boolean @default(false)
+  acquiringPct           Float   @default(0)
+  complexitySimplePct    Float   @default(0)
+  complexityMediumPct    Float   @default(0)
+  complexityComplexPct   Float   @default(0)
+  defectAllowancePct     Float   @default(0)
+  roundingMode           String  @default("none")
+  currency               String  @default("EUR")
+  theme                  String  @default("dark")
+  accent                 String  @default("orange")
+  defaultTaxRegimeId     String?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+}
+
+model TaxRegime {
+  id         String   @id @default(uuid())
+  workshopId String
+  workshop   Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  name       String
+  ratePct    Float
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model MarketplaceFee {
+  id            String   @id @default(uuid())
+  workshopId    String
+  workshop      Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  name          String
+  commissionPct Float    @default(0)
+  fixedFee      Float    @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model LoyaltyTier {
+  id          String   @id @default(uuid())
+  workshopId  String
+  workshop    Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  minOrders   Int
+  discountPct Float
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// Editable catalogs (Settings > Catalogs): kind = brand | materialType | modifier
+model CatalogItem {
+  id         String   @id @default(uuid())
+  workshopId String
+  workshop   Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  kind       String
+  name       String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model PrinterGroup {
+  id         String    @id @default(uuid())
+  workshopId String
+  workshop   Workshop  @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  name       String
+  printers   Printer[]
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+}
+
+model Printer {
+  id                      String    @id @default(uuid())
+  workshopId              String
+  workshop                Workshop  @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  manufacturer            String    @default("")
+  model                   String
+  internalName            String    @default("")
+  technology              String    @default("FDM")
+  powerW                  Float     @default(200)
+  price                   Float     @default(0)
+  lifetimeH               Float     @default(5000)
+  initialHours            Float     @default(0)
+  hoursManual             Float     @default(0)
+  note                    String    @default("")
+  photoUrl                String?
+  favourite               Boolean   @default(false)
+  groupId                 String?
+  group                   PrinterGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  maintenanceIntervalHours Float?
+  maintenanceIntervalDays  Int?
+  lastMaintenanceAt       DateTime?
+  lastMaintenanceHours    Float     @default(0)
+  orders                  Order[]
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+}
+
+model Dryer {
+  id         String   @id @default(uuid())
+  workshopId String
+  workshop   Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  name       String
+  powerW     Float    @default(50)
+  price      Float    @default(0)
+  lifetimeH  Float    @default(5000)
+  hoursUsed  Float    @default(0)
+  orders     Order[]
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model Filament {
+  id                 String   @id @default(uuid())
+  workshopId         String
+  workshop           Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  name               String   @default("PLA Basic")
+  brand              String   @default("")
+  type               String   @default("PLA")
+  modifier           String?
+  purchaseLink       String?
+  spoolPrice         Float    @default(0)
+  spoolWeightG       Float    @default(1000)
+  spoolCount         Float    @default(1)
+  usedFromSpoolG     Float    @default(0)
+  colors             String     @default("[]")
+  photoUrl           String?
+  lowStockThresholdG Float?
+  orderMaterials     OrderMaterial[]
+  modelFilaments     ModelFilament[]
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model ClientCategory {
+  id         String   @id @default(uuid())
+  workshopId String
+  workshop   Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  name       String
+  clients    Client[]
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model Client {
+  id            String   @id @default(uuid())
+  workshopId    String
+  workshop      Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  name          String
+  phone         String   @default("")
+  email         String   @default("")
+  address       String   @default("")
+  source        String   @default("")
+  discountPct   Float    @default(0)
+  categoryId    String?
+  category      ClientCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  photoUrl      String?
+  telegram      String   @default("")
+  contactPerson String   @default("")
+  signer        String   @default("")
+  companyName   String   @default("")
+  taxId         String   @default("")
+  note          String   @default("")
+  orders        Order[]
+  documents     Document[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model ModelGroup {
+  id         String   @id @default(uuid())
+  workshopId String
+  workshop   Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  name       String
+  models     Model[]
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model Model {
+  id                 String   @id @default(uuid())
+  workshopId         String
+  workshop           Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  name               String
+  photoUrl           String?
+  fileUrl            String?
+  sourceLink         String   @default("")
+  technology         String   @default("FDM")
+  groupId            String?
+  group              ModelGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  printTimeMin       Float    @default(0)
+  extraCosts         Float    @default(0)
+  pricePerPiece      Float?
+  complexity         String   @default("none")
+  sellAsProduct      Boolean  @default(false)
+  productDescription String   @default("")
+  filaments          ModelFilament[]
+  finishedGoods      FinishedGood[]
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model ModelFilament {
+  id         String    @id @default(uuid())
+  modelId    String
+  model      Model     @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  filamentId String?
+  filament   Filament? @relation(fields: [filamentId], references: [id], onDelete: SetNull)
+  grams      Float
+}
+
+model Order {
+  id                 String    @id @default(uuid())
+  workshopId         String
+  workshop           Workshop  @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  number             String
+  name               String
+  clientId           String?
+  client             Client?   @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  status             String    @default("negotiation")
+  paid               Boolean   @default(false)
+  advanceReceived    Float     @default(0)
+  advanceReceivedOn  Boolean   @default(false)
+  tips               Float     @default(0)
+  tipsReceived       Boolean   @default(false)
+  trackingNumber     String    @default("")
+  saleDate           DateTime  @default(now())
+  dueDate            DateTime?
+  tags               String      @default("[]")
+  notes              String    @default("")
+  source             String    @default("direct")
+  personalUse        Boolean   @default(false)
+  printerId          String?
+  printer            Printer?  @relation(fields: [printerId], references: [id], onDelete: SetNull)
+  dryerId            String?
+  dryer              Dryer?    @relation(fields: [dryerId], references: [id], onDelete: SetNull)
+  modelId            String?
+  printTimeMin       Float     @default(0)
+  quantity           Float     @default(1)
+  assemblyQuantity   Float     @default(1)
+  costMaterial       Float     @default(0)
+  costElectricity    Float     @default(0)
+  costPrinter        Float     @default(0)
+  costDryer          Float     @default(0)
+  costLabor          Float     @default(0)
+  costConsumables    Float     @default(0)
+  costPostprocessing Float     @default(0)
+  costPackaging      Float     @default(0)
+  costDelivery       Float     @default(0)
+  costWarehouse      Float     @default(0)
+  costOther          Float     @default(0)
+  totalCost          Float     @default(0)
+  discountPct        Float     @default(0)
+  discountAmount     Float     @default(0)
+  taxRegimeId        String?
+  taxAmount          Float     @default(0)
+  marketplaceFeeId   String?
+  marketplaceFee     Float     @default(0)
+  acquiringFee       Float     @default(0)
+  salePrice          Float     @default(0)
+  revenue            Float     @default(0)
+  profit             Float     @default(0)
+  netProfit          Float     @default(0)
+  marginPct          Float     @default(0)
+  materialDeducted   Boolean   @default(false)
+  statusDates        String      @default("{}")
+  clientLinkToken    String    @unique
+  slicerFileUrl      String?
+  // full calculator input, so "Recalculate" and "Repeat order" can re-run it
+  calcInput          String      @default("{}")
+  materials          OrderMaterial[]
+  services           OrderService[]
+  events             CalendarEvent[]
+  documents          Document[]
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+}
+
+model OrderMaterial {
+  id         String    @id @default(uuid())
+  orderId    String
+  order      Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  filamentId String?
+  filament   Filament? @relation(fields: [filamentId], references: [id], onDelete: SetNull)
+  name       String
+  color      String    @default("")
+  grams      Float
+  pricePerKg Float
+}
+
+model OrderService {
+  id      String @id @default(uuid())
+  orderId String
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  name    String
+  cost    Float  @default(0)
+  mode    String @default("fixed")
+  price   Float  @default(0)
+}
+
+model WarehouseShelf {
+  id         String   @id @default(uuid())
+  workshopId String
+  workshop   Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  name       String
+  icon       String   @default("")
+  link       String   @default("")
+  builtIn    Boolean  @default(false)
+  kind       String   @default("custom")
+  comingSoon Boolean  @default(false)
+  hidden     Boolean  @default(false)
+  sort       Int      @default(0)
+  photoUrl   String?
+  items      ShelfItem[]
+  goods      FinishedGood[]
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+// Items on custom shelves (keychain rings, packaging...), used by calculator "Warehouse items"
+model ShelfItem {
+  id         String         @id @default(uuid())
+  workshopId String
+  workshop   Workshop       @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  shelfId    String
+  shelf      WarehouseShelf @relation(fields: [shelfId], references: [id], onDelete: Cascade)
+  name       String
+  quantity   Float          @default(0)
+  unitCost   Float          @default(0)
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+}
+
+model FinishedGood {
+  id                 String         @id @default(uuid())
+  workshopId         String
+  workshop           Workshop       @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  shelfId            String
+  shelf              WarehouseShelf @relation(fields: [shelfId], references: [id], onDelete: Cascade)
+  modelId            String?
+  model              Model?         @relation(fields: [modelId], references: [id], onDelete: SetNull)
+  name               String
+  quantity           Float          @default(0)
+  unitCost           Float          @default(0)
+  unitPrice          Float          @default(0)
+  photoUrl           String?
+  description        String         @default("")
+  createdFromOrderId String?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+}
+
+model WriteOff {
+  id         String   @id @default(uuid())
+  workshopId String
+  workshop   Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  kind       String
+  refId      String
+  name       String   @default("")
+  quantity   Float
+  reason     String   @default("")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model CalendarEvent {
+  id          String   @id @default(uuid())
+  workshopId  String
+  workshop    Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  title       String
+  description String   @default("")
+  type        String   @default("todo")
+  color       String   @default("#f97316")
+  date        DateTime
+  allDay      Boolean  @default(true)
+  repeat      String   @default("none")
+  startTime   String   @default("")
+  endTime     String   @default("")
+  tags        String     @default("[]")
+  done        Boolean  @default(false)
+  orderId     String?
+  order       Order?   @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Document {
+  id         String   @id @default(uuid())
+  workshopId String
+  workshop   Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  type       String
+  number     String
+  clientId   String?
+  client     Client?  @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  orderId    String?
+  order      Order?   @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  amount     Float    @default(0)
+  data       String     @default("{}")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model CompanyDetails {
+  id           String   @id @default(uuid())
+  workshopId   String   @unique
+  workshop     Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  companyName  String   @default("")
+  taxId        String   @default("")
+  address      String   @default("")
+  phone        String   @default("")
+  email        String   @default("")
+  signer       String   @default("")
+  signerTitle  String   @default("")
+  bankName     String   @default("")
+  bic          String   @default("")
+  bankAccount  String   @default("")
+  logoUrl      String?
+  signatureUrl String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model CalcTemplate {
+  id         String   @id @default(uuid())
+  workshopId String
+  workshop   Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  name       String
+  input      String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model CalcDraft {
+  id         String   @id @default(uuid())
+  workshopId String
+  workshop   Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  name       String   @default("")
+  input      String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}

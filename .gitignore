@@ -1,0 +1,42 @@
+# dependencies
+/node_modules
+
+# build output and caches
+/.next/
+/out/
+/build
+/coverage
+*.tsbuildinfo
+next-env.d.ts
+
+# generated Prisma client (rebuilt by `npm install` / `prisma generate`)
+/src/generated/
+
+# secrets: keep only the template
+.env*
+!.env.example
+*.pem
+
+# local app data: database, uploaded files, backups, logs
+/prisma/*.db
+/prisma/*.db-*
+/uploads/
+/backup/
+/logs/
+*.log
+
+# editor/agent tooling installed by `prisma init` (not part of the app)
+/.claude/
+/.agents/
+/.windsurf/
+skills-lock.json
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+
+# private local notes
+NOTES.local.md
