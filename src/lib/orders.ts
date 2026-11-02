@@ -4,6 +4,7 @@ import { HttpError } from "./api";
 import { computeCalc, pricingSettings, type CalcInput, type CalcRefs } from "./calc";
 import { db, parseJson } from "./db";
 import { filamentsWithStock } from "./derive";
+import { tipOf } from "./payment";
 import { CONSUMING, type StatusKey } from "./status";
 
 export async function loadRefs(workshopId: string): Promise<CalcRefs> {
@@ -18,6 +19,21 @@ export async function loadRefs(workshopId: string): Promise<CalcRefs> {
     db.marketplaceFee.findMany({ where: { workshopId } }),
   ]);
   return { settings: pricingSettings(settings), filaments, printers, dryers, shelfItems, finishedGoods, taxRegimes, marketplaceFees };
+}
+
+/** Picture for each order: its catalog model's photo, else the photo of the finished model it sold. */
+export async function withPhotos<O extends { modelId: string | null; calcInput: string }>(workshopId: string, orders: O[]) {
+  const goodIds = orders.map((o) => parseJson<{ finishedGoodId?: string | null }>(o.calcInput, {}).finishedGoodId).filter((x): x is string => !!x);
+  const [models, goods] = await Promise.all([
+    db.model.findMany({ where: { workshopId, photoUrl: { not: null } }, select: { id: true, photoUrl: true } }),
+    goodIds.length ? db.finishedGood.findMany({ where: { workshopId, id: { in: goodIds } }, select: { id: true, photoUrl: true, model: { select: { photoUrl: true } } } }) : [],
+  ]);
+  const modelPhoto = new Map(models.map((m) => [m.id, m.photoUrl]));
+  const goodPhoto = new Map(goods.map((g) => [g.id, g.photoUrl ?? g.model?.photoUrl ?? null]));
+  return orders.map((o) => {
+    const goodId = parseJson<{ finishedGoodId?: string | null }>(o.calcInput, {}).finishedGoodId;
+    return { ...o, photoUrl: (o.modelId && modelPhoto.get(o.modelId)) || (goodId && goodPhoto.get(goodId)) || null };
+  });
 }
 
 const newNumber = () => crypto.randomUUID().replace(/-/g, "").slice(0, 8).toUpperCase();
@@ -54,6 +70,7 @@ function snapshot(calc: CalcInput, refs: CalcRefs) {
     acquiringFee: r.acquiringFee,
     salePrice: r.salePrice,
     tips: calc.tips,
+    tipsReceived: calc.tips > 0,
     revenue: r.revenue,
     profit: r.profit,
     netProfit: r.netProfit,
@@ -75,8 +92,23 @@ function snapshot(calc: CalcInput, refs: CalcRefs) {
   return { fields, materials, services };
 }
 
-/** Shelf items used by the order are taken from the warehouse when it starts printing. */
-async function moveShelfItems(tx: Prisma.TransactionClient, calc: CalcInput, sign: 1 | -1) {
+/**
+ * A sale from Finished models keeps the production cost the good had when it was sold: new orders take
+ * today's unit cost, edits keep the pinned one unless another finished model was picked.
+ */
+function pinStockCost(calc: CalcInput, refs: CalcRefs, old?: CalcInput | null, oldCostWarehouse = 0) {
+  if (calc.modelSource !== "stock" || !calc.finishedGoodId) return;
+  const current = refs.finishedGoods.find((g) => g.id === calc.finishedGoodId)?.unitCost ?? 0;
+  if (old?.finishedGoodId !== calc.finishedGoodId) return void (calc.stockUnitCost = current);
+  if (old.stockUnitCost != null) return void (calc.stockUnitCost = old.stockUnitCost);
+  // order saved before costs were pinned: recover the cost it was saved with from its stored
+  // stock-items cost, minus the other shelf items (priced at their current cost)
+  const items = old.warehouseItems.reduce((a, w) => a + (refs.shelfItems.find((i) => i.id === w.shelfItemId)?.unitCost ?? 0) * w.qty, 0);
+  calc.stockUnitCost = old.quantity > 0 ? Math.max(0, (oldCostWarehouse - items) / old.quantity) : current;
+}
+
+/** Shelf items used by the order are taken from the warehouse when it is placed. */
+export async function moveShelfItems(tx: Prisma.TransactionClient, calc: CalcInput, sign: 1 | -1) {
   for (const w of calc.warehouseItems) {
     await tx.shelfItem.updateMany({ where: { id: w.shelfItemId }, data: { quantity: { increment: sign * w.qty } } });
   }
@@ -88,6 +120,7 @@ export async function createOrder(
   opts: { personalUse?: boolean; source?: string } = {},
 ) {
   const refs = await loadRefs(workshopId);
+  pinStockCost(calc, refs);
   const { fields, materials, services } = snapshot(calc, refs);
   const status = calc.status as StatusKey;
   const now = new Date().toISOString();
@@ -173,7 +206,9 @@ export async function updateOrder(workshopId: string, id: string, calc: CalcInpu
   const order = await db.order.findFirst({ where: { id, workshopId } });
   if (!order) throw new HttpError(404, "Not found");
   const old = parseJson<CalcInput | null>(order.calcInput, null);
-  const { fields, materials, services } = snapshot(calc, await loadRefs(workshopId));
+  const refs = await loadRefs(workshopId);
+  pinStockCost(calc, refs, old, order.costWarehouse);
+  const { fields, materials, services } = snapshot(calc, refs);
   // ponytail: finished-good stock is not re-adjusted when a stock sale's quantity changes
   await db.$transaction(async (tx) => {
     if (order.materialDeducted) {
@@ -184,6 +219,8 @@ export async function updateOrder(workshopId: string, id: string, calc: CalcInpu
       where: { id },
       data: {
         ...fields,
+        // a tip switched off on the order keeps its amount for when it is switched back on
+        ...(calc.tips > 0 ? {} : { tips: order.tips }),
         saleDate: calc.saleDate ? new Date(calc.saleDate) : order.saleDate,
         dueDate: calc.dueDate ? new Date(calc.dueDate) : null,
         tags: JSON.stringify(calc.tags),
@@ -231,7 +268,7 @@ export async function addService(workshopId: string, id: string, s: { name: stri
   }
   const salePrice = order.salePrice + price;
   const totalCost = order.totalCost + s.cost;
-  const revenue = salePrice + order.tips;
+  const revenue = salePrice + tipOf(order);
   const profit = revenue - totalCost;
   const ratio = order.salePrice > 0 ? salePrice / order.salePrice : 1;
   // tax and percentage fees scale with the price; fixed fees stay

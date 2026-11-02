@@ -9,9 +9,9 @@ type AnyDelegate = { findMany(a: object): Promise<object[]>; createMany(a: objec
 const WS_TABLES = [
   "settings", "companyDetails", "taxRegime", "marketplaceFee", "loyaltyTier", "catalogItem", "printerGroup", "printer", "dryer",
   "filament", "clientCategory", "client", "modelGroup", "model", "warehouseShelf", "shelfItem", "finishedGood", "order",
-  "writeOff", "document", "calcTemplate", "calcDraft",
+  "writeOff", "document", "calcTemplate", "calcDraft", "stockPurchase",
 ] as const;
-const CHILD_TABLES = { modelFilament: "model", orderMaterial: "order", orderService: "order" } as const;
+const CHILD_TABLES = { modelFilament: "model", modelAccessory: "model", orderMaterial: "order", orderService: "order" } as const;
 const SETTINGS_TABLES = ["settings", "taxRegime", "marketplaceFee", "loyaltyTier", "catalogItem"] as const;
 
 const d = (c: Tx | typeof db, t: string) => (c as unknown as Record<string, AnyDelegate>)[t];

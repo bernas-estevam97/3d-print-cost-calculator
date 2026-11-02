@@ -54,6 +54,7 @@ model Workshop {
   documents       Document[]
   templates       CalcTemplate[]
   drafts          CalcDraft[]
+  purchases       StockPurchase[]
 }
 
 model Settings {
@@ -200,6 +201,7 @@ model Filament {
   colors             String     @default("[]")
   photoUrl           String?
   lowStockThresholdG Float?
+  notes              String   @default("")
   orderMaterials     OrderMaterial[]
   modelFilaments     ModelFilament[]
   createdAt          DateTime @default(now())
@@ -268,6 +270,7 @@ model Model {
   sellAsProduct      Boolean  @default(false)
   productDescription String   @default("")
   filaments          ModelFilament[]
+  accessories        ModelAccessory[]
   finishedGoods      FinishedGood[]
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
@@ -280,6 +283,16 @@ model ModelFilament {
   filamentId String?
   filament   Filament? @relation(fields: [filamentId], references: [id], onDelete: SetNull)
   grams      Float
+}
+
+// Stock shelf items a model needs per piece (main doc 6.8, accessories)
+model ModelAccessory {
+  id          String    @id @default(uuid())
+  modelId     String
+  model       Model     @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  shelfItemId String
+  shelfItem   ShelfItem @relation(fields: [shelfItemId], references: [id], onDelete: Cascade)
+  qty         Float     @default(1)
 }
 
 model Order {
@@ -397,6 +410,10 @@ model ShelfItem {
   name       String
   quantity   Float          @default(0)
   unitCost   Float          @default(0)
+  // what the workshop paid per unit; unitCost is what it charges
+  pricePaid  Float          @default(0)
+  notes      String         @default("")
+  models     ModelAccessory[]
   createdAt  DateTime       @default(now())
   updatedAt  DateTime       @updatedAt
 }
@@ -433,6 +450,20 @@ model WriteOff {
   updatedAt  DateTime @updatedAt
 }
 
+// Money spent buying stock: one row per stock increase of a filament or shelf item.
+// Order consumption and write-offs never create rows, so nothing is counted twice.
+model StockPurchase {
+  id         String   @id @default(uuid())
+  workshopId String
+  workshop   Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  kind       String
+  refId      String
+  name       String
+  quantity   Float
+  unitPrice  Float
+  total      Float
+  createdAt  DateTime @default(now())
+}
 
 model Document {
   id         String   @id @default(uuid())

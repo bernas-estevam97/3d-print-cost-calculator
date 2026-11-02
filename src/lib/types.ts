@@ -13,6 +13,8 @@ export type Order = {
   marketplaceFee: number; acquiringFee: number; salePrice: number; revenue: number; profit: number; netProfit: number; marginPct: number;
   materialDeducted: boolean; statusDates: string; slicerFileUrl: string | null; calcInput: string;
   createdAt: string;
+  /** model or finished-good photo, resolved by the API */
+  photoUrl?: string | null;
   client: { id: string; name: string } | null;
   printer: { id: string; model: string; internalName: string } | null;
   materials: OrderMaterial[];
@@ -22,7 +24,7 @@ export type Order = {
 export type Filament = {
   id: string; name: string; brand: string; type: string; modifier: string | null; purchaseLink: string | null; spoolPrice: number;
   spoolWeightG: number; spoolCount: number; usedFromSpoolG: number; colors: string[]; photoUrl: string | null;
-  lowStockThresholdG: number | null; pricePerKg: number; stockG: number; lastsDays: number | null;
+  lowStockThresholdG: number | null; notes: string; pricePerKg: number; stockG: number; lastsDays: number | null;
 };
 
 export type Client = {
@@ -36,6 +38,7 @@ export type Model = {
   group?: { name: string } | null; printTimeMin: number; extraCosts: number; pricePerPiece: number | null; complexity: string;
   sellAsProduct: boolean; productDescription: string; materialPerPieceG: number;
   filaments: { id: string; filamentId: string | null; grams: number; filament: { name: string; colors: string } | null }[];
+  accessories: { id: string; shelfItemId: string; qty: number; shelfItem: { name: string; unitCost: number } }[];
 };
 
 export const printerName = (p: { model: string; internalName: string } | null | undefined) => (p ? p.internalName || p.model : "—");

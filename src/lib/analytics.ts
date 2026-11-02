@@ -1,8 +1,10 @@
 // Analytics and dashboard figures, main doc 5.11 and 5.12. Server only.
 // Definitions (chosen so the seeded data reproduces main doc section 11):
-// - Revenue / profit / net profit count PAID orders, by sale date (cash actually earned).
+// - Revenue / profit / net profit count the PAID part of each order (a 40% advance counts 40%),
+//   by sale date (cash actually earned).
 // - Personal-use and cancelled orders never count as sales.
 import { db, parseJson } from "./db";
+import { payment } from "./payment";
 import { filamentsWithStock, printerStats, enrichPrinter } from "./derive";
 import { CONSUMING, IN_PROGRESS, STATUSES, STEPPER, type StatusKey } from "./status";
 
@@ -40,10 +42,10 @@ const median = (xs: number[]) => {
 };
 
 function money(orders: O[]) {
-  const paid = orders.filter((o) => isSale(o) && o.paid);
-  const revenue = sum(paid, (o) => o.revenue);
-  const profit = sum(paid, (o) => o.profit);
-  const netProfit = sum(paid, (o) => o.netProfit);
+  const paid = orders.filter(isSale).map((o) => ({ o, share: payment(o).share })).filter((x) => x.share > 0);
+  const revenue = sum(paid, (x) => x.o.revenue * x.share);
+  const profit = sum(paid, (x) => x.o.profit * x.share);
+  const netProfit = sum(paid, (x) => x.o.netProfit * x.share);
   return { revenue, profit, netProfit, margin: revenue > 0 ? (netProfit / revenue) * 100 : 0, count: paid.length };
 }
 
@@ -73,7 +75,7 @@ export async function analytics(workshopId: string, from: Date, to: Date) {
   });
 
   // ---------- finance ----------
-  const paid = sales.filter((o) => o.paid);
+  const paid = sales.filter((o) => payment(o).share > 0);
   const unpaid = orders.filter((o) => isSale(o) && !o.paid);
   const costParts: [string, (o: O) => number][] = [
     ["Material", (o) => o.costMaterial], ["Electricity", (o) => o.costElectricity], ["Printer amortization", (o) => o.costPrinter],
@@ -92,8 +94,9 @@ export async function analytics(workshopId: string, from: Date, to: Date) {
     const k = o.client?.category?.name ?? "No category";
     const c = byCategory.get(k) ?? { revenue: 0, paid: 0, unpaid: 0, cost: 0, tax: 0, marketplace: 0, gross: 0, net: 0 };
     c.revenue += o.revenue;
-    if (o.paid) c.paid += o.revenue;
-    else c.unpaid += o.revenue;
+    const share = payment(o).share;
+    c.paid += o.revenue * share;
+    c.unpaid += o.revenue * (1 - share);
     c.cost += o.totalCost;
     c.tax += o.taxAmount;
     c.marketplace += o.marketplaceFee;
@@ -186,12 +189,12 @@ export async function analytics(workshopId: string, from: Date, to: Date) {
       lossModels: models.filter((m) => m.profit < 0).sort((a, b) => a.profit - b.profit),
     },
     finance: {
-      paidSales: { count: paid.length, amount: sum(paid, (o) => o.revenue) },
+      paidSales: { count: paid.length, amount: sum(paid, (o) => o.revenue * payment(o).share) },
       totalCost,
-      receivable: sum(unpaid, (o) => o.revenue - (o.advanceReceivedOn ? o.advanceReceived : 0)),
+      receivable: sum(unpaid, (o) => payment(o).balance),
       costStructure,
       profitTrend,
-      recent: period.slice(0, 6).map((o) => ({ id: o.id, name: o.name, date: o.saleDate, price: o.salePrice, profit: o.profit, paid: o.paid })),
+      recent: period.slice(0, 6).map((o) => ({ id: o.id, name: o.name, date: o.saleDate, price: o.salePrice, profit: o.profit, payment: payment(o).status })),
       byCategory: [...byCategory.entries()].map(([name, v]) => ({ name, ...v })),
     },
     production: {
@@ -250,6 +253,10 @@ export async function dashboard(workshopId: string, range: "week" | "month") {
     }
   }
   const filaments = await filamentsWithStock(workshopId);
+  // money actually spent buying stock (purchase history), not the value of what is left
+  const purchases = await db.stockPurchase.findMany({ where: { workshopId }, select: { kind: true, name: true, total: true, createdAt: true } });
+  const spentBy = new Map<string, number>();
+  for (const p of purchases) spentBy.set(p.name, (spentBy.get(p.name) ?? 0) + p.total);
   const events = [
     ...orders.slice(0, 5).map((o) => ({ kind: "order", text: `New order ${o.name}`, date: o.saleDate, href: `/en/orders/${o.id}` })),
     ...clientRows.slice(0, 5).map((c) => ({ kind: "client", text: `New client ${c.name}`, date: c.createdAt, href: `/en/clients/${c.id}` })),
@@ -266,6 +273,13 @@ export async function dashboard(workshopId: string, range: "week" | "month") {
     topMaterials: { total: sum([...matTotals.values()], (m) => m.grams), items: [...matTotals.entries()].sort((a, b) => b[1].grams - a[1].grams).slice(0, 5).map(([name, v]) => ({ name, ...v })) },
     weekday,
     events,
+    expenses: {
+      total: sum(purchases, (p) => p.total),
+      period: sum(purchases.filter((p) => inRange(p.createdAt, start, end)), (p) => p.total),
+      filament: sum(purchases.filter((p) => p.kind === "filament"), (p) => p.total),
+      items: sum(purchases.filter((p) => p.kind === "item"), (p) => p.total),
+      byMaterial: [...spentBy.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([name, total]) => ({ name, total })),
+    },
     restock: filaments.filter((f) => f.lastsDays != null && f.lastsDays <= 14).sort((a, b) => a.lastsDays! - b.lastsDays!).map((f) => ({ id: f.id, name: f.name, lastsDays: f.lastsDays, color: f.colors[0] })),
   };
 }

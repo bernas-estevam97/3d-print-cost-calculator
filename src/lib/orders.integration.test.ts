@@ -120,6 +120,24 @@ describe("material deduction", () => {
     await m.orders.deleteOrder(ws, order.id);
   });
 
+  it("a sale from Finished models keeps the production cost it was sold at", async () => {
+    const shelf = await m.db.warehouseShelf.findFirstOrThrow({ where: { workshopId: ws, kind: "finished" } });
+    const good = await m.db.finishedGood.create({ data: { workshopId: ws, shelfId: shelf.id, name: "Owl", quantity: 3, unitCost: 2, unitPrice: 10 } });
+    const calc = { ...m.calc.emptyCalc(), name: "Owl", modelSource: "stock" as const, finishedGoodId: good.id, priceMode: "price" as const, targetPrice: 10 };
+    const order = await m.orders.createOrder(ws, calc);
+    expect(order.totalCost).toBe(2);
+    expect(order.profit).toBe(8);
+    // producing more at another cost moves the average, not the sold order
+    await m.db.finishedGood.update({ where: { id: good.id }, data: { unitCost: 7 } });
+    await m.orders.updateOrder(ws, order.id, { ...calc, notes: "edited" });
+    expect((await m.db.order.findUniqueOrThrow({ where: { id: order.id } })).totalCost).toBe(2);
+    // an order saved before costs were pinned keeps the cost stored with it
+    await m.db.order.update({ where: { id: order.id }, data: { calcInput: JSON.stringify({ ...calc, stockUnitCost: null }) } });
+    await m.orders.updateOrder(ws, order.id, { ...calc, notes: "old" });
+    expect((await m.db.order.findUniqueOrThrow({ where: { id: order.id } })).totalCost).toBe(2);
+    await m.orders.deleteOrder(ws, order.id);
+  });
+
   it("records the date of each status once", async () => {
     const order = await m.orders.createOrder(ws, { ...m.calc.emptyCalc(), name: "Dates", status: "negotiation" });
     await m.orders.setStatus(ws, order.id, "confirmed");

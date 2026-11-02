@@ -27,6 +27,7 @@ export const PATCH = route<Ctx>(async (req, ctx, auth) => {
   const data = e.toData ? await e.toData(sent, auth.workshopId, id) : sent;
   for (const f of e.files ?? []) if (f in sent && sent[f] !== row[f]) await deleteFiles({ ...e, files: [f] }, auth.workshopId, row);
   const updated = await e.delegate.update({ where: { id }, data, include: e.include });
+  if (e.afterUpdate) await e.afterUpdate(row, updated, auth.workshopId);
   return e.enrich ? (await e.enrich([updated], auth.workshopId))[0] : updated;
 });
 

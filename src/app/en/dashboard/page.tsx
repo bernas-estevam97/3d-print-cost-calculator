@@ -22,6 +22,7 @@ type Dash = {
   weekday: { day: string; orders: number; clients: number }[];
   events: { kind: string; text: string; date: string; href: string }[];
   restock: { id: string; name: string; lastsDays: number; color: string }[];
+  expenses: { total: number; period: number; filament: number; items: number; byMaterial: { name: string; total: number }[] };
 };
 
 function Change({ v }: { v: number | null }) {
@@ -135,7 +136,14 @@ export default function DashboardPage() {
             </Card>
           </div>
 
-          <div className="grid gap-3 lg:grid-cols-2">
+          <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
+            <Card title="Material expenses">
+              <div className="text-2xl font-bold tabular-nums">{m(d.expenses.total)}</div>
+              <p className="mb-3 text-xs text-muted">
+                Spent on stock purchases · {m(d.expenses.period)} this {range} · filaments {m(d.expenses.filament)} · stock items {m(d.expenses.items)}
+              </p>
+              <BarList items={d.expenses.byMaterial.map((x) => ({ name: x.name, value: x.total }))} format={(v) => m(v)} />
+            </Card>
             <Card title="Events">
               {d.events.length === 0 ? <p className="text-sm text-muted">Nothing yet</p> : (
                 <ul className="space-y-2 text-sm">

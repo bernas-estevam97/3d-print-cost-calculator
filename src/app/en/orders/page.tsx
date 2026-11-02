@@ -13,6 +13,7 @@ import {
 import { api, useCurrency, useList, useMutate, useQueryState } from "@/lib/client";
 import { dateLong, duration, money, pct } from "@/lib/format";
 import { ORDER_COLUMNS, ordersCsv } from "@/lib/order-csv";
+import { payment } from "@/lib/payment";
 import { STATUSES } from "@/lib/status";
 import type { Client, Order } from "@/lib/types";
 
@@ -32,7 +33,7 @@ export default function OrdersPage() {
 
   const [q, setQ] = useQueryState("q", "");
   const [status, setStatus] = useQueryState("status", "");
-  const [payment, setPayment] = useQueryState("payment", "all");
+  const [pay, setPay] = useQueryState("payment", "all");
   const [source, setSource] = useQueryState("source", "");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -59,8 +60,7 @@ export default function OrdersPage() {
       const text = `${o.name} ${o.number} ${o.client?.name ?? ""}`.toLowerCase();
       if (q && !text.includes(q.toLowerCase())) return false;
       if (status && o.status !== status) return false;
-      if (payment === "paid" && !o.paid) return false;
-      if (payment === "unpaid" && o.paid) return false;
+      if (pay !== "all" && payment(o).status !== pay) return false;
       if (source && o.source !== source) return false;
       if (hidePersonal && o.personalUse) return false;
       if (from && o.saleDate.slice(0, 10) < from) return false;
@@ -68,7 +68,7 @@ export default function OrdersPage() {
       return true;
     })
     .sort(SORTS[sort]?.[1] ?? SORTS.newest[1]);
-  const activeFilters = [status, payment !== "all", source, from, to, hidePersonal].filter(Boolean).length;
+  const activeFilters = [status, pay !== "all", source, from, to, hidePersonal].filter(Boolean).length;
   const toggle = (id: string) => setSelected(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]);
 
 
@@ -135,13 +135,14 @@ export default function OrdersPage() {
             <div className="space-y-2">
               <div className="flex items-start gap-3">
                 <input type="checkbox" aria-label="Select order" className="mt-1 size-5 accent-[var(--accent)]" checked={selected.includes(o.id)} onClick={(e) => e.stopPropagation()} onChange={() => toggle(o.id)} />
+                <Thumb src={o.photoUrl} />
                 <div className="min-w-0 flex-1">
                   <div className="truncate font-medium">{o.name}</div>
                   <div className="text-xs text-muted">{o.client?.name ?? "No client"} · {duration(o.printTimeMin * o.quantity)}</div>
                 </div>
                 <div className="text-right"><div className="font-semibold">{m(o.salePrice)}</div><div className="text-xs text-green-500">{m(o.profit)}</div></div>
               </div>
-              <div className="flex flex-wrap gap-1.5"><StatusBadge status={o.status} /><PaidBadge paid={o.paid} />{o.personalUse && <span className="text-xs text-muted">personal use</span>}</div>
+              <div className="flex flex-wrap gap-1.5"><StatusBadge status={o.status} /><PaidBadge order={o} />{o.personalUse && <span className="text-xs text-muted">personal use</span>}</div>
             </div>
           )}
           columns={[
@@ -150,12 +151,12 @@ export default function OrdersPage() {
             ) },
             { key: "model", header: "Model", fixed: true, sort: (o) => o.name, cell: (o) => (
               <div className="flex items-center gap-3">
-                <Thumb />
+                <Thumb src={o.photoUrl} />
                 <div className="min-w-0"><div className="max-w-64 truncate font-medium">{o.name}</div><div className="text-xs text-muted">{duration(o.printTimeMin * o.quantity)}{o.quantity > 1 ? ` · ${o.quantity} pcs` : ""}</div></div>
               </div>
             ) },
             { key: "status", header: "Status", sort: (o) => STATUSES.findIndex((s) => s.key === o.status), cell: (o) => <StatusBadge status={o.status} /> },
-            { key: "payment", header: "Payment", sort: (o) => Number(o.paid), cell: (o) => <PaidBadge paid={o.paid} /> },
+            { key: "payment", header: "Payment", sort: (o) => payment(o).received / Math.max(0.01, payment(o).due), cell: (o) => <PaidBadge order={o} /> },
             { key: "client", header: "Client", sort: (o) => o.client?.name ?? "", cell: (o) => o.client?.name ?? "—" },
             { key: "material", header: "Material", cell: (o) => o.materials[0] ? (
               <span className="flex items-center gap-1.5"><ColorDot color={o.materials[0].color} /><span className="max-w-40 truncate">{o.materials[0].name}</span>{o.materials.length > 1 && <span className="text-xs text-muted">+{o.materials.length - 1}</span>}</span>
@@ -178,7 +179,7 @@ export default function OrdersPage() {
 
       <Dialog open={filters} onClose={() => setFilters(false)} title="Filters" footer={
         <>
-          <Button variant="ghost" onClick={() => { setStatus(""); setPayment("all"); setSource(""); setFrom(""); setTo(""); setHidePersonal(false); }}>Reset</Button>
+          <Button variant="ghost" onClick={() => { setStatus(""); setPay("all"); setSource(""); setFrom(""); setTo(""); setHidePersonal(false); }}>Reset</Button>
           <Button variant="primary" onClick={() => setFilters(false)}>Show {rows.length} orders</Button>
         </>
       }>
@@ -197,9 +198,10 @@ export default function OrdersPage() {
           </Select>
         </Field>
         <Field label="Payment">
-          <Select value={payment} onChange={(e) => setPayment(e.target.value)}>
+          <Select value={pay} onChange={(e) => setPay(e.target.value)}>
             <option value="all">Payment: all</option>
             <option value="paid">Paid</option>
+            <option value="partial">Partially paid</option>
             <option value="unpaid">Unpaid</option>
           </Select>
         </Field>

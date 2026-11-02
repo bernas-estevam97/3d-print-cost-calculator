@@ -6,7 +6,7 @@ import { useState } from "react";
 import { CsvTools } from "@/components/csv-tools";
 import { DataTable, useLocal } from "@/components/data-table";
 import {
-  Badge, Button, ColorDot, Dialog, EmptyState, Field, Input, ListSkeleton, NumberInput, PageHeader, PhotoInput, Segmented, Select, deleteWithUndo,
+  Badge, Button, ColorDot, Dialog, EmptyState, Field, Input, ListSkeleton, NumberInput, PageHeader, PhotoInput, Segmented, Select, Textarea, deleteWithUndo,
 } from "@/components/ui";
 import { api, useCurrency, useList, useMutate, useQueryState, useRemove, useSave } from "@/lib/client";
 import { num, toCsv } from "@/lib/csv";
@@ -17,12 +17,12 @@ type CatalogItem = { id: string; kind: string; name: string };
 
 const blank = (): Partial<Filament> => ({
   name: "", brand: "Bambu Lab", type: "PLA", modifier: null, purchaseLink: "", spoolPrice: 0, spoolWeightG: 1000, spoolCount: 1,
-  usedFromSpoolG: 0, colors: ["#ffffff"], photoUrl: null, lowStockThresholdG: null,
+  usedFromSpoolG: 0, colors: ["#ffffff"], photoUrl: null, lowStockThresholdG: null, notes: "",
 });
 
 // CSV: the editable fields; colors are space-separated hex codes. Older files with one "color" column still import.
 // usedFromSpoolG is exported as everything used so far (manual + orders), so the imported copy shows the same stock.
-const FILAMENT_FIELDS = ["name", "brand", "type", "modifier", "spoolPrice", "spoolWeightG", "spoolCount", "lowStockThresholdG", "purchaseLink"] as const;
+const FILAMENT_FIELDS = ["name", "brand", "type", "modifier", "spoolPrice", "spoolWeightG", "spoolCount", "lowStockThresholdG", "purchaseLink", "notes"] as const;
 const FILAMENT_COLUMNS = [...FILAMENT_FIELDS, "usedFromSpoolG", "colors"];
 const filamentsCsv = (rows: Filament[]) =>
   toCsv(FILAMENT_COLUMNS, rows.map((f) => [...FILAMENT_FIELDS.map((k) => f[k]), f.spoolCount * f.spoolWeightG - f.stockG, f.colors.join(" ")]));
@@ -35,7 +35,7 @@ async function importFilaments(rows: Record<string, string>[]) {
       json: {
         name: r.name ?? "", brand: r.brand ?? "", type: r.type || "PLA", modifier: r.modifier || null, purchaseLink: r.purchaseLink || null, colors,
         spoolPrice: num(r.spoolPrice), spoolWeightG: num(r.spoolWeightG, 1000), spoolCount: num(r.spoolCount, 1), usedFromSpoolG: num(r.usedFromSpoolG),
-        lowStockThresholdG: r.lowStockThresholdG ? num(r.lowStockThresholdG) : null,
+        lowStockThresholdG: r.lowStockThresholdG ? num(r.lowStockThresholdG) : null, notes: r.notes ?? "",
       },
     });
   }
@@ -103,6 +103,9 @@ function FilamentForm({ value, onChange, catalogs }: { value: Partial<Filament>;
           {colors.length < 4 && <Button size="sm" onClick={() => set("colors", [...colors, "#000000"])}><Plus className="size-4" /> Color</Button>}
         </div>
       </Field>
+      <Field label="Notes" hint="Optional: nozzle and bed temperature, speed, drying, manufacturer tips…">
+        <Textarea value={value.notes ?? ""} onChange={(e) => set("notes", e.target.value)} placeholder={"Nozzle 220 °C · Bed 60 °C · Dry 55 °C for 6 h"} />
+      </Field>
       <PhotoInput value={value.photoUrl} onChange={(u) => set("photoUrl", u)} />
     </div>
   );
@@ -146,8 +149,8 @@ export default function FilamentsPage() {
   const toggle = (id: string) => setSelected(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]);
 
   const submit = () => {
-    const { id, name, brand, type, modifier, purchaseLink, spoolPrice, spoolWeightG, spoolCount, usedFromSpoolG, colors, photoUrl, lowStockThresholdG } = form!;
-    save.mutate({ id, name, brand, type, modifier, purchaseLink, spoolPrice, spoolWeightG, spoolCount, usedFromSpoolG, colors, photoUrl, lowStockThresholdG }, { onSuccess: () => setForm(null) });
+    const { id, name, brand, type, modifier, purchaseLink, spoolPrice, spoolWeightG, spoolCount, usedFromSpoolG, colors, photoUrl, lowStockThresholdG, notes } = form!;
+    save.mutate({ id, name, brand, type, modifier, purchaseLink, spoolPrice, spoolWeightG, spoolCount, usedFromSpoolG, colors, photoUrl, lowStockThresholdG, notes }, { onSuccess: () => setForm(null) });
   };
 
   return (
@@ -207,7 +210,7 @@ export default function FilamentsPage() {
               <div className="flex items-center gap-2">
                 {selecting && <input type="checkbox" readOnly checked={selected.includes(f.id)} className="size-4 accent-[var(--accent)]" />}
                 <ColorDot color={f.colors[0]} className="size-4" />
-                <div className="min-w-0"><div className="truncate font-medium">{f.name}</div><div className="text-xs text-muted">{f.brand}</div></div>
+                <div className="min-w-0"><div className="truncate font-medium">{f.name}</div><div className="max-w-64 truncate text-xs text-muted" title={f.notes || undefined}>{f.brand}{f.notes ? ` · ${f.notes.split("\n")[0]}` : ""}</div></div>
               </div>
             ) },
             { key: "brand", header: "Brand", sort: (f) => f.brand, cell: (f) => f.brand, hiddenByDefault: true },

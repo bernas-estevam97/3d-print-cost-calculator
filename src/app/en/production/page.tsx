@@ -12,7 +12,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useLocal } from "@/components/data-table";
-import { Badge, Checkbox, Input, ListSkeleton, PageHeader, PaidBadge, Select, cn } from "@/components/ui";
+import { Badge, Checkbox, Input, ListSkeleton, PageHeader, PaidBadge, Select, Thumb, cn } from "@/components/ui";
 import { api, useCurrency, useList, useMutate } from "@/lib/client";
 import { dateDot, duration, money } from "@/lib/format";
 import { STATUSES } from "@/lib/status";
@@ -49,8 +49,9 @@ function OrderCard({ o, currency, selected, focused, onClick, onStatus, overlay 
       )}
     >
       <div className="flex items-start justify-between gap-2">
-        <span className="font-medium break-words">{o.name}</span>
-        <PaidBadge paid={o.paid} />
+        <Thumb src={o.photoUrl} className="size-8" />
+        <span className="min-w-0 flex-1 font-medium break-words">{o.name}</span>
+        <PaidBadge order={o} />
       </div>
       {o.materials.length > 0 && (
         <div className="flex flex-wrap gap-1">

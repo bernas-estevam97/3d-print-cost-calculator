@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Avatar, ClientFields, pickClient } from "@/components/client-form";
-import { Badge, Button, Card, ListSkeleton, PaidBadge, Segmented, StatusBadge, deleteWithUndo } from "@/components/ui";
+import { Badge, Button, Card, ListSkeleton, PaidBadge, Segmented, StatusBadge, Thumb, deleteWithUndo } from "@/components/ui";
 import { useApi, useCurrency, useList, useQueryState, useRemove, useSave } from "@/lib/client";
 import { dateUS, money } from "@/lib/format";
 import type { Client, Order } from "@/lib/types";
@@ -61,8 +61,9 @@ export default function ClientDetail() {
           {mine.length === 0 && <p className="p-4 text-sm text-muted">No orders yet.</p>}
           {mine.map((o) => (
             <Link key={o.id} href={`/en/orders/${o.id}`} className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-3 last:border-0 hover:bg-card-2">
+              <Thumb src={o.photoUrl} />
               <div className="min-w-0 flex-1"><div className="truncate font-medium">{o.name}</div><div className="text-xs text-muted">{dateUS(o.saleDate)}</div></div>
-              <StatusBadge status={o.status} /><PaidBadge paid={o.paid} />
+              <StatusBadge status={o.status} /><PaidBadge order={o} />
               <span className="w-20 text-right font-medium">{money(o.salePrice, currency)}</span>
             </Link>
           ))}

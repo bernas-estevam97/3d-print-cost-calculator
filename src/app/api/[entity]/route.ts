@@ -14,6 +14,11 @@ export const POST = route<Ctx>(async (req, ctx, auth) => {
   const e = entity(name);
   if (!e) throw notFound();
   const parsed = e.schema.parse(await req.json()) as Record<string, unknown>;
+  if (e.uniqueName) {
+    const name = String(parsed.name).toLowerCase();
+    const rows = await e.delegate.findMany({ where: { workshopId: auth.workshopId } });
+    if (rows.some((r) => String(r.name).toLowerCase() === name)) throw new HttpError(409, `"${parsed.name}" already exists`);
+  }
   const data = e.toData ? await e.toData(parsed, auth.workshopId) : parsed;
   if (name === "drafts") {
     // keep only the newest MAX_DRAFTS (main doc 6.1)

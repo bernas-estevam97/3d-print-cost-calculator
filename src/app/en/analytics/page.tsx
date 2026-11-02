@@ -1,5 +1,5 @@
 "use client";
-// Analytics, main doc 5.11 / 6.13. Revenue and profit count paid orders (see lib/analytics.ts).
+// Analytics, main doc 5.11 / 6.13. Revenue and profit count the paid part of each order (see lib/analytics.ts).
 import { AlertTriangle, ChevronLeft, ChevronRight, Download } from "lucide-react";
 import Link from "next/link";
 import { BarList, Bars, Donut, MultiSeries, shortMonth } from "@/components/charts";
@@ -64,7 +64,7 @@ export default function AnalyticsPage() {
 
   return (
     <div>
-      <PageHeader title="Analytics" info="Revenue and profit count paid orders, by sale date" />
+      <PageHeader title="Analytics" info="Revenue and profit count money received (fully or partly paid orders), by sale date" />
       <div className="mb-3 overflow-x-auto">
         <Segmented value={tab} onChange={setTab} options={[
           { value: "overview", label: "Overview" }, { value: "finance", label: "Finance" },
@@ -94,7 +94,7 @@ export default function AnalyticsPage() {
                   <div className="text-sm opacity-90">profit · {duration(d.overview.today.printMin)} printing</div>
                   <div className="mt-2 text-sm">{d.overview.today.urgent ? `${d.overview.today.urgent} orders due within 72 h` : "No urgent orders in the next 72 h"}</div>
                 </div>
-                <Kpi label="Revenue" value={m(d.overview.revenue)} sub={`${d.overview.count} paid orders`} />
+                <Kpi label="Revenue" value={m(d.overview.revenue)} sub={`${d.overview.count} paid or partly paid orders`} />
                 <Kpi label="Net profit" value={m(d.overview.netProfit)} />
                 <Kpi label="Margin" value={pct(d.overview.margin)} />
               </div>
@@ -117,7 +117,7 @@ export default function AnalyticsPage() {
               <div className="grid gap-3 sm:grid-cols-3">
                 <Kpi label="Paid sales" value={m(d.finance.paidSales.amount)} sub={`${d.finance.paidSales.count} orders`} />
                 <Kpi label="Total cost" value={m(d.finance.totalCost)} />
-                <Kpi label="Accounts receivable" value={m(d.finance.receivable)} sub="Unpaid orders, incl. in progress" />
+                <Kpi label="Accounts receivable" value={m(d.finance.receivable)} sub="Still owed on unpaid and partly paid orders" />
               </div>
               <div className="grid gap-4 lg:grid-cols-2">
                 <Card title="Cost structure"><Donut items={d.finance.costStructure} format={m} /></Card>
@@ -128,7 +128,7 @@ export default function AnalyticsPage() {
                 <ul className="divide-y divide-border">
                   {d.finance.recent.map((o) => (
                     <li key={o.id}><Link href={`/en/orders/${o.id}`} className="flex items-center gap-3 py-2 text-sm hover:text-accent">
-                      <span className="flex-1 truncate">{o.name}</span><span className="text-xs text-muted">{dateUS(o.date)}</span><PaidBadge paid={o.paid} /><span className="w-20 text-right tabular-nums">{m(o.price)}</span>
+                      <span className="flex-1 truncate">{o.name}</span><span className="text-xs text-muted">{dateUS(o.date)}</span><PaidBadge status={o.payment} /><span className="w-20 text-right tabular-nums">{m(o.price)}</span>
                     </Link></li>
                   ))}
                 </ul>

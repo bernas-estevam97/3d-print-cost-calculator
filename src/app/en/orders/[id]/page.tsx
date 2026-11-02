@@ -7,11 +7,13 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
 import {
-  Button, Card, ColorDot, Dialog, Field, Input, Kpi, ListSkeleton, NumberInput, Select, StatusBadge, Switch, cn,
+  Button, Card, ColorDot, Dialog, Field, Input, Kpi, ListSkeleton, NumberInput, PaidBadge, Select, StatusBadge, Switch, Thumb, cn,
 } from "@/components/ui";
 import { api, useApi, useCurrency, useMutate } from "@/lib/client";
+import { stockSaleCost, type CalcInput } from "@/lib/calc";
 import { parseJson } from "@/lib/json";
 import { dateDot, dateShort, duration, money, pct } from "@/lib/format";
+import { payment } from "@/lib/payment";
 import { STATUSES, STEPPER } from "@/lib/status";
 import { printerName, type Order } from "@/lib/types";
 
@@ -39,10 +41,27 @@ export default function OrderDetail() {
   const offStepper = stepIdx < 0;
   const grams = o.materials.reduce((a, x) => a + x.grams, 0);
   const docLink = (type: string) => `/en/documents?create=${type}&order=${o.id}`;
+  const pay = payment(o);
+  // amount fields save on blur; a new amount replaces the old one
+  const amount = (key: "tips" | "advanceReceived", label: string) => (
+    <div className="flex items-center justify-between gap-2 pb-2 pl-4 text-sm">
+      <span className="text-muted">{label}</span>
+      <NumberInput aria-label={label} className="h-9 w-28 text-right" value={o[key]} onChange={() => {}} onBlur={(e) => {
+        const v = Math.max(0, parseFloat(e.target.value.replace(",", ".")) || 0);
+        if (v !== o[key]) patch.mutate({ [key]: v });
+      }} />
+    </div>
+  );
 
+  // a sale from Finished models: its production cost was pinned when sold (older orders: the whole stock line)
+  const calc = parseJson<Partial<CalcInput>>(o.calcInput, {});
+  const produced = o.source === "stock"
+    ? calc.stockUnitCost != null ? stockSaleCost({ modelSource: "stock", finishedGoodId: calc.finishedGoodId ?? null, stockUnitCost: calc.stockUnitCost, quantity: o.quantity }) : o.costWarehouse
+    : 0;
   const costLines: [string, number][] = ([
+    ["Production cost (finished model)", produced],
     ["Material", o.costMaterial], ["Electricity", o.costElectricity], ["Printer", o.costPrinter], ["Dryer", o.costDryer],
-    ["Labor", o.costLabor], ["Stock items", o.costWarehouse], ["Consumables", o.costConsumables],
+    ["Labor", o.costLabor], ["Stock items", o.costWarehouse - produced], ["Consumables", o.costConsumables],
     ["Post-processing", o.costPostprocessing], ["Packaging", o.costPackaging], ["Delivery", o.costDelivery], ["Other and services", o.costOther],
   ] as [string, number][]).filter(([, v]) => v > 0.0049);
 
@@ -54,7 +73,7 @@ export default function OrderDetail() {
         <div className="min-w-0">
           <h1 className="text-2xl font-bold break-words">{o.name}</h1>
           <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted">
-            <StatusBadge status={o.status} /> {dateDot(o.saleDate)} · #{o.number}
+            <StatusBadge status={o.status} /> <PaidBadge order={o} /> {dateDot(o.saleDate)} · #{o.number}
             {o.personalUse && <span>· personal use</span>}
           </div>
         </div>
@@ -103,7 +122,7 @@ export default function OrderDetail() {
       </Card>
 
       <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <Kpi label="Revenue" value={m(o.revenue)} sub={o.tips > 0 ? `incl. ${m(o.tips)} tips` : undefined} />
+        <Kpi label="Revenue" value={m(o.revenue)} sub={pay.tip > 0 ? `incl. ${m(pay.tip)} tip` : undefined} />
         <Kpi label="Profit" value={<span className={o.profit >= 0 ? "text-green-500" : "text-red-500"}>{m(o.profit)}</span>} />
         <Kpi label="Net profit" value={m(o.netProfit)} sub={`Margin ${pct(o.marginPct)}`} />
       </div>
@@ -111,9 +130,18 @@ export default function OrderDetail() {
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="space-y-4">
           <Card title="Model breakdown">
-            <div className="font-medium">{o.name}</div>
-            <div className="text-sm text-muted">{o.quantity} pcs · {Math.round(grams * 100) / 100} g</div>
-            <div className="text-sm text-muted">Material {m(o.costMaterial)} · Equipment {m(o.costElectricity + o.costPrinter + o.costDryer)}</div>
+            <div className="flex items-center gap-3">
+              <Thumb src={o.photoUrl} className="size-16" />
+              <div className="min-w-0">
+                <div className="font-medium">{o.name}</div>
+                <div className="text-sm text-muted">{o.quantity} pcs · {Math.round(grams * 100) / 100} g</div>
+              </div>
+            </div>
+            <div className="text-sm text-muted">
+              {o.source === "stock"
+                ? `Sold from Finished models · production cost ${m(produced)}`
+                : `Material ${m(o.costMaterial)} · Equipment ${m(o.costElectricity + o.costPrinter + o.costDryer)}`}
+            </div>
             <dl className="mt-3 grid grid-cols-3 gap-2 text-sm">
               <div><dt className="text-xs text-muted">Revenue</dt><dd>{m(o.revenue)}</dd></div>
               <div><dt className="text-xs text-muted">Cost</dt><dd>{m(o.totalCost)}</dd></div>
@@ -150,13 +178,6 @@ export default function OrderDetail() {
               {o.taxAmount > 0 && <div className="flex justify-between text-muted"><span>Tax</span><span>{m(o.taxAmount)}</span></div>}
               {o.marketplaceFee > 0 && <div className="flex justify-between text-muted"><span>Marketplace fee</span><span>{m(o.marketplaceFee)}</span></div>}
               {o.acquiringFee > 0 && <div className="flex justify-between text-muted"><span>Acquiring</span><span>{m(o.acquiringFee)}</span></div>}
-              <div className="flex items-center justify-between gap-2 pt-1">
-                <span>Tips</span>
-                <NumberInput className="h-9 w-28 text-right" value={o.tips} onChange={() => {}} onBlur={(e) => {
-                  const v = parseFloat(e.target.value.replace(",", ".")) || 0;
-                  if (v !== o.tips) patch.mutate({ tips: v });
-                }} />
-              </div>
             </div>
           </Card>
         </div>
@@ -164,17 +185,35 @@ export default function OrderDetail() {
         <div className="space-y-4">
           <Card title="Client">
             {o.client ? <Link href={`/en/clients/${o.client.id}`} className="font-medium text-accent hover:underline">{o.client.name}</Link> : <span className="text-muted">No client</span>}
-            <div className="mt-2 divide-y divide-border">
-              <Switch label="Paid" checked={o.paid} onChange={(v) => patch.mutate({ paid: v })} />
-              <Switch label="Advance received" checked={o.advanceReceivedOn} onChange={(v) => patch.mutate({ advanceReceivedOn: v })} />
-              <Switch label="Tips received" checked={o.tipsReceived} onChange={(v) => patch.mutate({ tipsReceived: v })} />
-            </div>
             <Field label="Tracking number" className="mt-2">
               <div className="flex gap-2">
                 <Input value={tracking ?? o.trackingNumber} onChange={(e) => setTracking(e.target.value)} placeholder="—" />
                 <Button aria-label="Save tracking number" disabled={tracking === null || tracking === o.trackingNumber} onClick={() => patch.mutate({ trackingNumber: tracking! }, { onSuccess: () => setTracking(null) })}><Truck className="size-4" /></Button>
               </div>
             </Field>
+          </Card>
+
+          <Card title="Payment" actions={<PaidBadge order={o} />}>
+            <div className="divide-y divide-border">
+              <Switch label="Paid in full" checked={o.paid} onChange={(v) => patch.mutate({ paid: v })} />
+              <div>
+                <Switch label="Tip" description="Added to the order total" checked={o.tipsReceived} onChange={(v) => patch.mutate({ tipsReceived: v })} />
+                {o.tipsReceived && amount("tips", "Tip amount")}
+              </div>
+              <div>
+                <Switch label="Advance received" checked={o.advanceReceivedOn} onChange={(v) => patch.mutate({ advanceReceivedOn: v })} />
+                {o.advanceReceivedOn && amount("advanceReceived", "Amount received")}
+              </div>
+            </div>
+            <dl className="mt-3 grid grid-cols-2 gap-1.5 border-t border-border pt-3 text-sm">
+              <dt className="text-muted">Order value</dt><dd className="text-right tabular-nums">{m(pay.price)}</dd>
+              {pay.tip > 0 && <><dt className="text-muted">Tip</dt><dd className="text-right tabular-nums">{m(pay.tip)}</dd></>}
+              <dt className="font-medium">Total due</dt><dd className="text-right font-medium tabular-nums">{m(pay.due)}</dd>
+              {o.advanceReceivedOn && <><dt className="text-muted">Advance received</dt><dd className="text-right tabular-nums">−{m(pay.advance)}</dd></>}
+              {o.paid && !o.advanceReceivedOn && <><dt className="text-muted">Received</dt><dd className="text-right tabular-nums">−{m(pay.received)}</dd></>}
+              <dt className="font-semibold">Remaining balance</dt>
+              <dd className={cn("text-right font-semibold tabular-nums", pay.balance > 0.005 ? "text-amber-500" : "text-green-500")}>{m(pay.balance)}</dd>
+            </dl>
           </Card>
 
           <Card title="Documents">

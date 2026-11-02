@@ -1,10 +1,11 @@
 "use client";
 // Small UI kit on native elements (<dialog>, <select>, <input type=date>): no component library.
-import { ImagePlus, Info, Loader2, X } from "lucide-react";
+import { Box, Check, ChevronDown, ImagePlus, Info, Loader2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
+import { PAYMENT_LABELS, payment, type PaymentStatus } from "@/lib/payment";
 import { statusOf } from "@/lib/status";
 import { upload } from "@/lib/client";
 
@@ -98,6 +99,98 @@ export function Select({ className, children, ...p }: React.SelectHTMLAttributes
     <select className={cn(field, "appearance-none bg-[length:16px] bg-[right_10px_center] bg-no-repeat pr-8", className)} style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238b97ad' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")" }} {...p}>
       {children}
     </select>
+  );
+}
+
+export type RichOption = { value: string; label: React.ReactNode; icon?: React.ReactNode; disabled?: boolean };
+
+/**
+ * Select whose options can show a picture or colour dot, which a native <select> cannot.
+ * The list is position: fixed so it is not clipped inside dialogs. Options are buttons, so a
+ * wrapping <Field> label does not re-open the list when one is clicked.
+ */
+export function RichSelect({
+  value, onChange, options, placeholder = "Choose", className, ...p
+}: { value: string; onChange: (v: string) => void; options: RichOption[]; placeholder?: string; className?: string; "aria-label"?: string }) {
+  const [box, setBox] = useState<{ top?: number; bottom?: number; left: number; width: number } | null>(null);
+  const btn = useRef<HTMLButtonElement>(null);
+  const list = useRef<HTMLDivElement>(null);
+  const sel = options.find((o) => o.value === value);
+  const close = () => setBox(null);
+  const isOpen = !!box;
+  useEffect(() => {
+    if (!isOpen) return;
+    const out = (e: Event) => !list.current?.contains(e.target as Node) && !btn.current?.contains(e.target as Node) && close();
+    // the list follows its button when the page or a dialog scrolls
+    const follow = (e: Event) => !list.current?.contains(e.target as Node) && open();
+    window.addEventListener("pointerdown", out, true);
+    window.addEventListener("scroll", follow, true);
+    window.addEventListener("resize", close);
+    list.current?.querySelector("[aria-selected=true]")?.scrollIntoView({ block: "nearest" });
+    return () => {
+      window.removeEventListener("pointerdown", out, true);
+      window.removeEventListener("scroll", follow, true);
+      window.removeEventListener("resize", close);
+    };
+  }, [isOpen]);
+  function open() {
+    const r = btn.current!.getBoundingClientRect();
+    const below = window.innerHeight - r.bottom;
+    setBox(below < 260 && r.top > below ? { bottom: window.innerHeight - r.top + 4, left: r.left, width: r.width } : { top: r.bottom + 4, left: r.left, width: r.width });
+  }
+  const pick = (v: string) => { onChange(v); close(); btn.current?.focus(); };
+  const move = (e: React.KeyboardEvent, d: number) => {
+    e.preventDefault();
+    const items = [...(list.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ?? [])];
+    items[(items.indexOf(document.activeElement as HTMLButtonElement) + d + items.length) % items.length]?.focus();
+  };
+  return (
+    <>
+      <button
+        ref={btn}
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+        aria-label={p["aria-label"]}
+        onClick={() => (isOpen ? close() : open())}
+        onKeyDown={(e) => { if (e.key === "ArrowDown" && !isOpen) { e.preventDefault(); open(); } }}
+        className={cn(field, "flex items-center gap-2 text-left", className)}
+      >
+        {sel?.icon}
+        <span className={cn("min-w-0 flex-1 truncate", !sel && "text-muted")}>{sel ? sel.label : placeholder}</span>
+        <ChevronDown className="size-4 shrink-0 text-muted" />
+      </button>
+      {box && (
+        <div
+          ref={list}
+          role="listbox"
+          style={{ position: "fixed", ...box }}
+          className="z-50 max-h-64 overflow-y-auto rounded-xl border border-border bg-card p-1 shadow-xl"
+          onKeyDown={(e) => {
+            if (e.key === "ArrowDown") move(e, 1);
+            else if (e.key === "ArrowUp") move(e, -1);
+            else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); btn.current?.focus(); }
+          }}
+        >
+          {options.map((o) => (
+            <button
+              key={o.value}
+              type="button"
+              role="option"
+              aria-selected={o.value === value}
+              disabled={o.disabled}
+              autoFocus={o.value === value}
+              onClick={() => pick(o.value)}
+              className="flex min-h-10 w-full items-center gap-2 rounded-lg px-2 text-left text-sm outline-none hover:bg-card-2 focus:bg-card-2 disabled:opacity-50"
+            >
+              {o.icon}
+              <span className="min-w-0 flex-1 truncate">{o.label}</span>
+              {o.value === value && <Check className="size-4 shrink-0 text-accent" />}
+            </button>
+          ))}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -212,12 +305,16 @@ export function StatusBadge({ status }: { status: string }) {
   return <Badge className={s.cls}>{s.label}</Badge>;
 }
 
-export function PaidBadge({ paid }: { paid: boolean }) {
-  return paid ? (
-    <Badge className="bg-green-500/15 text-green-600 dark:text-green-400">Paid</Badge>
-  ) : (
-    <Badge className="bg-amber-500/15 text-amber-600 dark:text-amber-400">Unpaid</Badge>
-  );
+const PAYMENT_CLS: Record<PaymentStatus, string> = {
+  paid: "bg-green-500/15 text-green-600 dark:text-green-400",
+  partial: "bg-sky-500/15 text-sky-600 dark:text-sky-400",
+  unpaid: "bg-amber-500/15 text-amber-600 dark:text-amber-400",
+};
+
+/** Payment status badge; pass the order, or a status computed on the server. */
+export function PaidBadge({ order, status }: { order?: Parameters<typeof payment>[0]; status?: PaymentStatus }) {
+  const s = status ?? payment(order!).status;
+  return <Badge className={PAYMENT_CLS[s]}>{PAYMENT_LABELS[s]}</Badge>;
 }
 
 /** App mark: the transparent flask from public/gorilab.png, cropped by CSS, on an accent tile. */
@@ -233,6 +330,15 @@ export function Logo({ className }: { className?: string }) {
 
 export function ColorDot({ color, className }: { color?: string; className?: string }) {
   return <span className={cn("inline-block size-3 shrink-0 rounded-full border border-black/20", className)} style={{ background: color || "transparent" }} />;
+}
+
+/** Every colour of a filament spool, as stored on its stock record. */
+export function ColorDots({ colors }: { colors: string[] }) {
+  return (
+    <span className="flex shrink-0 -space-x-1">
+      {(colors.length ? colors : [""]).map((c, i) => <ColorDot key={i} color={c} className="size-3.5" />)}
+    </span>
+  );
 }
 
 export function Segmented<T extends string>({ value, onChange, options, className }: { value: T; onChange: (v: T) => void; options: { value: T; label: React.ReactNode }[]; className?: string }) {
@@ -349,9 +455,9 @@ export function PhotoInput({ value, onChange, label = "Photo" }: { value: string
 
 export function Thumb({ src, className }: { src?: string | null; className?: string }) {
   return (
-    <div className={cn("size-10 shrink-0 overflow-hidden rounded-lg border border-border bg-card-2", className)}>
+    <div className={cn("flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-card-2", className)}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      {src && <img src={src} alt="" className="size-full object-cover" />}
+      {src ? <img src={src} alt="" className="size-full object-cover" /> : <Box className="size-1/2 text-muted" aria-hidden />}
     </div>
   );
 }

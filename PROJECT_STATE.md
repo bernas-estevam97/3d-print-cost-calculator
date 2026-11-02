@@ -24,7 +24,7 @@ npm, `seed:demo` marked dev-only, and backup uses `node:sqlite`.
 
 Feature-complete against the spec for v1. All checks green as of the last session:
 
-- 34 tests pass (`npm test`): pricing fixtures, slicer parsing, `orders.integration.test.ts`.
+- 41 tests pass (`npm test`): pricing fixtures, slicer parsing, `orders.integration.test.ts`.
 - `npm run typecheck`, `npm run lint` and `npm run build` are clean, with no build warnings.
 - Both spec pricing fixtures reproduce in the UI.
 - Seed sanity numbers match the spec (via `npm run check:seed` after `seed:demo`): 9.7 kg / 11 spools /
@@ -139,7 +139,8 @@ Dryer, Filament, ClientCategory, Client, ModelGroup, Model, ModelFilament, Order
 OrderService, WarehouseShelf, ShelfItem, FinishedGood, WriteOff, Document,
 CompanyDetails, CalcTemplate, CalcDraft. Everything hangs off Workshop with `onDelete: Cascade`, so
 deleting a workshop removes all its rows. Migrations: `20261029144721_init`, `20261029221200_remove_sla`,
-`20261030090000_remove_calendar_paints_client_link`.
+`20261030090000_remove_calendar_paints_client_link`, `20261102174806_issues_expenses_accessories_notes`
+(ModelAccessory, StockPurchase, Filament.notes, ShelfItem.pricePaid/notes; existing tips switched on).
 
 ### API routes (`src/app/api/`)
 
@@ -213,6 +214,29 @@ import; `[entity]` and `[entity]/[id]` (generic CRUD).
    `better-sqlite3@13` dependency: v13 has no prebuilt binaries and failed `npm install` on machines
    without Visual Studio build tools. The app uses the Prisma adapter's own prebuilt v12; the Prisma
    CLI's v13 is an optional peer now, so a failed compile there is skipped.
+
+11. ISSUES.md fixes (2026-11-02):
+   - Images: `withPhotos` in `lib/orders.ts` adds `photoUrl` to orders (model photo, else the sold
+     finished good's). Shown in orders list/cards, order detail, kanban, client orders, calculator
+     pickers, Finished models shelf. `Thumb` shows a box icon when there is no photo.
+   - `RichSelect` in `ui.tsx`: picker with icons (native `<select>` cannot show images or colour dots).
+     Used for catalog models, finished goods and filaments (`ColorDots` = the filament's stored colours).
+   - Payment: `lib/payment.ts` (`payment()`, `tipOf()`), separate from production status:
+     Unpaid / Partially paid / Paid. The tip counts in revenue only while `tipsReceived` is on; the
+     amount is kept when switched off. An advance covering the total sets `paid`. Order detail has a
+     Payment card (value, tip, total due, advance, balance).
+   - Stock items have `pricePaid` (what the owner paid) next to `unitCost` (what is charged; still the
+     calculator cost, owner's decision) and `notes`. Filaments have `notes`.
+   - `StockPurchase`: one row per increase of a filament's spools or a shelf item's quantity
+     (`recordPurchase` in `entities.ts`), at the price paid then. Order use, write-offs and decreases
+     never add rows. Dashboard "Material expenses" sums it. Tracking started 2026-11-02 (no backfill).
+   - Finished-model sales pin the good's unit cost in `calcInput.stockUnitCost` (`pinStockCost`), so
+     edits never re-price historical production cost; shown as "Production cost (finished model)".
+   - "Save to stocks" now takes the filament (`usedFromSpoolG`) and stock items at production time, so
+     selling from Finished models never deducts them again.
+   - Models have accessories (`ModelAccessory`, qty per piece). `modelToCalc` in `lib/calc.ts` is the
+     single model -> calculator mapping; the catalog's "Cost / pc" uses it with `computeCalc`.
+   - Model groups: create from the model dialog; names unique per workshop ignoring case (`uniqueName`).
 
 ## 7. Conventions and gotchas
 

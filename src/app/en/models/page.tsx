@@ -6,10 +6,11 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { DataTable, useLocal } from "@/components/data-table";
 import {
-  Badge, Button, Checkbox, ColorDot, Dialog, EmptyState, Field, Input, ListSkeleton, NumberInput, PageHeader, PhotoInput, Segmented,
-  Select, Textarea, Thumb, deleteWithUndo,
+  Badge, Button, Checkbox, ColorDot, ColorDots, Dialog, EmptyState, Field, Input, ListSkeleton, NumberInput, PageHeader, PhotoInput, RichSelect,
+  Segmented, Select, Textarea, Thumb, deleteWithUndo,
 } from "@/components/ui";
-import { upload, useCurrency, useList, useRemove, useSave } from "@/lib/client";
+import { computeCalc, emptyCalc, modelToCalc, type CalcRefs } from "@/lib/calc";
+import { upload, useApi, useCurrency, useList, useRemove, useSave } from "@/lib/client";
 import { duration, money } from "@/lib/format";
 import { parseJson } from "@/lib/json";
 import { parseSlicerFile, SlicerError } from "@/lib/slicer";
@@ -19,11 +20,20 @@ type Form = {
   id?: string; name: string; photoUrl: string | null; fileUrl: string | null; sourceLink: string; groupId: string | null;
   printH: number; printM: number; extraCosts: number; pricePerPiece: number | null; complexity: string; sellAsProduct: boolean;
   productDescription: string; filaments: { filamentId: string | null; grams: number }[];
+  accessories: { shelfItemId: string; qty: number }[];
 };
+
+/** Production cost of one piece, priced by the calculator's own logic (no printer: time is costed in the calculator). */
+function pieceCost(m: Form, refs: CalcRefs | undefined) {
+  if (!refs) return null;
+  const model = { ...m, id: m.id ?? "", printTimeMin: m.printH * 60 + m.printM, accessories: m.accessories.filter((a) => a.shelfItemId && a.qty > 0) };
+  return computeCalc({ ...modelToCalc(model, emptyCalc()), printerId: null, dryerId: null }, refs).result.totalCost;
+}
 
 const blank = (): Form => ({
   name: "", photoUrl: null, fileUrl: null, sourceLink: "", groupId: null, printH: 0, printM: 0, extraCosts: 0,
   pricePerPiece: null, complexity: "none", sellAsProduct: false, productDescription: "", filaments: [{ filamentId: null, grams: 0 }],
+  accessories: [],
 });
 
 const toForm = (x: Model): Form => ({
@@ -31,14 +41,32 @@ const toForm = (x: Model): Form => ({
   printH: Math.floor(x.printTimeMin / 60), printM: Math.round(x.printTimeMin % 60), extraCosts: x.extraCosts, pricePerPiece: x.pricePerPiece,
   complexity: x.complexity, sellAsProduct: x.sellAsProduct, productDescription: x.productDescription,
   filaments: x.filaments.length ? x.filaments.map((f) => ({ filamentId: f.filamentId, grams: f.grams })) : [{ filamentId: null, grams: 0 }],
+  accessories: (x.accessories ?? []).map((a) => ({ shelfItemId: a.shelfItemId, qty: a.qty })),
 });
 
-function ModelDialog({ form, setForm, filaments, groups }: { form: Form | null; setForm: (f: Form | null) => void; filaments: Filament[]; groups: { id: string; name: string }[] }) {
+function ModelDialog({ form, setForm, filaments, groups, refs }: {
+  form: Form | null; setForm: (f: Form | null) => void; filaments: Filament[]; groups: { id: string; name: string }[]; refs: CalcRefs | undefined;
+}) {
+  const currency = useCurrency();
   const save = useSave<Model>("models", "Model saved");
+  const saveGroup = useSave<{ id: string; name: string }>("model-groups", "Group created");
   const [busy, setBusy] = useState(false);
+  const [newGroup, setNewGroup] = useState<string | null>(null);
   if (!form) return null;
   const cur: Form = form;
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setForm({ ...cur, [k]: v });
+
+  // create a group without leaving the dialog; an existing name is selected instead of duplicated
+  function createGroup() {
+    const name = newGroup!.trim();
+    const existing = groups.find((g) => g.name.toLowerCase() === name.toLowerCase());
+    if (existing) {
+      set("groupId", existing.id);
+      setNewGroup(null);
+      return toast.info(`Group "${existing.name}" already exists, selected it`);
+    }
+    saveGroup.mutate({ name }, { onSuccess: (g) => { setForm({ ...cur, groupId: g.id }); setNewGroup(null); } });
+  }
 
   async function onFile(file: File) {
     setBusy(true);
@@ -67,7 +95,10 @@ function ModelDialog({ form, setForm, filaments, groups }: { form: Form | null; 
   const submit = () => {
     const { id, printH, printM, ...rest } = form;
     save.mutate(
-      { id, ...rest, printTimeMin: printH * 60 + printM, filaments: form.filaments.filter((f) => f.grams > 0) } as never,
+      {
+        id, ...rest, printTimeMin: printH * 60 + printM, filaments: form.filaments.filter((f) => f.grams > 0),
+        accessories: form.accessories.filter((a) => a.shelfItemId && a.qty > 0),
+      } as never,
       { onSuccess: () => setForm(null) },
     );
   };
@@ -90,21 +121,35 @@ function ModelDialog({ form, setForm, filaments, groups }: { form: Form | null; 
         </label>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Group">
-          <Select value={form.groupId ?? ""} onChange={(e) => set("groupId", e.target.value || null)}>
-            <option value="">No group</option>
-            {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-          </Select>
-        </Field>
+        {newGroup === null ? (
+          <Field label="Group">
+            <Select value={form.groupId ?? ""} onChange={(e) => (e.target.value === "__new" ? setNewGroup("") : set("groupId", e.target.value || null))}>
+              <option value="">No group</option>
+              {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+              <option value="__new">+ Create new group…</option>
+            </Select>
+          </Field>
+        ) : (
+          <Field label="New group name">
+            <div className="flex gap-2">
+              <Input autoFocus value={newGroup} onChange={(e) => setNewGroup(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && newGroup.trim()) { e.preventDefault(); createGroup(); } }} />
+              <Button variant="primary" disabled={!newGroup.trim()} loading={saveGroup.isPending} onClick={createGroup}>Create</Button>
+              <Button size="icon" variant="ghost" aria-label="Cancel new group" onClick={() => setNewGroup(null)}><X className="size-4" /></Button>
+            </div>
+          </Field>
+        )}
       </div>
       <Field label={`Filaments (${form.filaments.length}/16)`}>
         <div className="space-y-2">
           {form.filaments.map((row, i) => (
             <div key={i} className="grid grid-cols-[1fr_100px_44px] gap-2">
-              <Select aria-label="Filament" value={row.filamentId ?? ""} onChange={(e) => set("filaments", form.filaments.map((x, j) => (j === i ? { ...x, filamentId: e.target.value || null } : x)))}>
-                <option value="">Choose filament</option>
-                {filaments.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
-              </Select>
+              <RichSelect
+                aria-label="Filament"
+                value={row.filamentId ?? ""}
+                onChange={(v) => set("filaments", form.filaments.map((x, j) => (j === i ? { ...x, filamentId: v || null } : x)))}
+                placeholder="Choose filament"
+                options={[{ value: "", label: "Choose filament" }, ...filaments.map((f) => ({ value: f.id, icon: <ColorDots colors={f.colors} />, label: f.name }))]}
+              />
               <NumberInput aria-label="Grams" value={row.grams} onChange={(v) => set("filaments", form.filaments.map((x, j) => (j === i ? { ...x, grams: v } : x)))} suffix="g" />
               <Button size="icon" variant="ghost" aria-label="Remove filament" disabled={form.filaments.length <= 1} onClick={() => set("filaments", form.filaments.filter((_, j) => j !== i))}><X className="size-4" /></Button>
             </div>
@@ -112,6 +157,30 @@ function ModelDialog({ form, setForm, filaments, groups }: { form: Form | null; 
           {form.filaments.length < 16 && <Button size="sm" onClick={() => set("filaments", [...form.filaments, { filamentId: null, grams: 0 }])}><Plus className="size-4" /> Add filament</Button>}
         </div>
       </Field>
+      {/* not a <Field>: a wrapping <label> would press "Add accessory" when its caption is clicked */}
+      <div className="space-y-1.5">
+        <span className="text-xs font-medium text-muted">Accessories ({form.accessories.length})</span>
+        <div className="space-y-2">
+          {form.accessories.map((row, i) => {
+            const upd = (p: Partial<Form["accessories"][number]>) => set("accessories", form.accessories.map((x, j) => (j === i ? { ...x, ...p } : x)));
+            return (
+              <div key={i} className="grid grid-cols-[1fr_100px_44px] gap-2">
+                <Select aria-label="Accessory" value={row.shelfItemId} onChange={(e) => upd({ shelfItemId: e.target.value })}>
+                  {(refs?.shelfItems ?? []).map((it) => <option key={it.id} value={it.id}>{it.name} · {money(it.unitCost, currency)} · {it.quantity} left</option>)}
+                </Select>
+                <NumberInput aria-label="Accessory quantity" value={row.qty} onChange={(v) => upd({ qty: v })} suffix="pcs" />
+                <Button size="icon" variant="ghost" aria-label="Remove accessory" onClick={() => set("accessories", form.accessories.filter((_, j) => j !== i))}><X className="size-4" /></Button>
+              </div>
+            );
+          })}
+          {refs && refs.shelfItems.length === 0 ? (
+            <p className="text-xs text-muted">No stock items yet. Add them on a shelf in <Link href="/en/warehouse" className="text-accent">Stocks</Link>.</p>
+          ) : (
+            <Button size="sm" disabled={!refs} onClick={() => set("accessories", [...form.accessories, { shelfItemId: refs!.shelfItems[0].id, qty: 1 }])}><Plus className="size-4" /> Add accessory</Button>
+          )}
+        </div>
+        <span className="block text-xs text-muted">Stock items used per piece; taken from stock when the model is ordered or saved to stocks</span>
+      </div>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Field label="Print time (h)"><NumberInput value={form.printH} onChange={(v) => set("printH", v)} /></Field>
         <Field label="(min)"><NumberInput value={form.printM} onChange={(v) => set("printM", v)} /></Field>
@@ -119,6 +188,10 @@ function ModelDialog({ form, setForm, filaments, groups }: { form: Form | null; 
         <Field label="Price per piece"><NumberInput value={form.pricePerPiece ?? 0} onChange={(v) => set("pricePerPiece", v || null)} /></Field>
       </div>
       <p className="-mt-2 text-xs text-muted">Price per piece is used as the sale price when ordering, instead of the cost-based price.</p>
+      <div className="flex items-center justify-between rounded-xl bg-card-2 px-3 py-2 text-sm">
+        <span>Production cost / piece <span className="text-xs text-muted">· material, accessories, extra costs (printer time is added in the calculator)</span></span>
+        <b className="tabular-nums">{money(pieceCost(form, refs) ?? 0, currency)}</b>
+      </div>
       <Field label="Manufacturing complexity">
         <Select value={form.complexity} onChange={(e) => set("complexity", e.target.value)}>
           <option value="none">Not set</option><option value="simple">Simple</option><option value="medium">Medium</option><option value="complex">Complex</option>
@@ -141,6 +214,7 @@ export default function ModelsPage() {
   const { data, isLoading } = useList<Model>("models");
   const { data: filaments = [] } = useList<Filament>("filaments");
   const { data: groups = [] } = useList<{ id: string; name: string }>("model-groups");
+  const { data: refs } = useApi<CalcRefs>("/api/calculator/refs");
   const saveGroup = useSave<{ id: string; name: string }>("model-groups", "Group created");
   const remove = useRemove("models");
   const currency = useCurrency();
@@ -201,6 +275,7 @@ export default function ModelsPage() {
             ) },
             { key: "group", header: "Group", cell: (x) => x.group?.name ?? "—" },
             { key: "grams", header: "Material / pc", sort: (x) => x.materialPerPieceG, cell: (x) => `${Math.round(x.materialPerPieceG * 100) / 100} g` },
+            { key: "cost", header: "Cost / pc", sort: (x) => pieceCost(toForm(x), refs) ?? 0, cell: (x) => (refs ? money(pieceCost(toForm(x), refs)!, currency) : "—") },
             { key: "time", header: "Print time", sort: (x) => x.printTimeMin, cell: (x) => duration(x.printTimeMin) },
             { key: "price", header: "Price / pc", sort: (x) => x.pricePerPiece ?? 0, cell: (x) => (x.pricePerPiece != null ? money(x.pricePerPiece, currency) : "—") },
             { key: "sale", header: "For sale", cell: (x) => (x.sellAsProduct ? <Badge className="bg-green-500/15 text-green-500">For sale</Badge> : "—") },
@@ -218,7 +293,7 @@ export default function ModelsPage() {
           ]}
         />
       )}
-      <ModelDialog form={form} setForm={setForm} filaments={filaments} groups={groups} />
+      <ModelDialog key={form ? form.id ?? "new" : "closed"} form={form} setForm={setForm} filaments={filaments} groups={groups} refs={refs} />
       <Dialog open={groupName !== null} onClose={() => setGroupName(null)} title="New model group" footer={
         <Button variant="primary" disabled={!groupName?.trim()} onClick={() => saveGroup.mutate({ name: groupName! }, { onSuccess: () => setGroupName(null) })}>Create</Button>
       }>

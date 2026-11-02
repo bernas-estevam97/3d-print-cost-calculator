@@ -14,6 +14,8 @@ export const calcSchema = z.object({
   modelSource: z.enum(["catalog", "stock"]).catch("catalog"),
   modelId: id,
   finishedGoodId: id,
+  // unit production cost of the finished model, pinned by the server when it is sold
+  stockUnitCost: z.coerce.number().nullable().catch(null),
   quantity: z.coerce.number().min(1).catch(1),
   materialMode: z.enum(["stock", "manual"]).catch("stock"),
   materials: z.array(z.object({ filamentId: id, grams: num })).catch([]),
@@ -104,7 +106,7 @@ export function toPricingInput(c: CalcInput, refs: CalcRefs): { input: PricingIn
     unitCost: refs.shelfItems.find((i) => i.id === w.shelfItemId)?.unitCost ?? 0,
     qty: w.qty,
   }));
-  if (good) warehouseItems.push({ unitCost: good.unitCost, qty: c.quantity });
+  if (stockSale) warehouseItems.push({ unitCost: c.stockUnitCost ?? good?.unitCost ?? 0, qty: c.quantity });
 
   const labor = c.includeLabor ? c.labor : { operator: 0, modeling: 0, painting: 0 };
 
@@ -138,6 +140,50 @@ export function toPricingInput(c: CalcInput, refs: CalcRefs): { input: PricingIn
       settings: s,
     },
   };
+}
+
+type CatalogModel = {
+  id: string; name: string; printTimeMin: number; complexity: string; extraCosts: number; pricePerPiece: number | null;
+  filaments: { filamentId: string | null; grams: number }[];
+  accessories?: { shelfItemId: string; qty: number }[];
+};
+
+/** Model accessories for an order of `quantity` pieces. */
+export const modelAccessories = (model: CatalogModel, quantity: number) =>
+  (model.accessories ?? []).map((a) => ({ shelfItemId: a.shelfItemId, qty: a.qty * quantity }));
+
+/**
+ * Calculator input prefilled from a catalog model (main doc 6.8). The Model Catalog prices its
+ * models with this too, so both always agree.
+ */
+export function modelToCalc(model: CatalogModel, base: CalcInput): CalcInput {
+  const accessories = modelAccessories(model, base.quantity);
+  return {
+    ...base,
+    modelSource: "catalog",
+    modelId: model.id,
+    name: model.name,
+    materialMode: "stock",
+    materials: model.filaments.length ? model.filaments.map((f) => ({ filamentId: f.filamentId, grams: f.grams })) : base.materials,
+    printH: Math.floor(model.printTimeMin / 60),
+    printMin: Math.round(model.printTimeMin % 60),
+    complexity: (model.complexity as CalcInput["complexity"]) ?? "none",
+    printFileCost: model.extraCosts || base.printFileCost,
+    advanced: base.advanced || model.extraCosts > 0,
+    // the model's accessories replace those lines, other stock items stay
+    warehouseItems: [...base.warehouseItems.filter((w) => !accessories.some((a) => a.shelfItemId === w.shelfItemId)), ...accessories],
+    // a fixed price per piece replaces cost-based pricing (main doc 5.5)
+    ...(model.pricePerPiece != null ? { priceMode: "price" as const, targetPrice: model.pricePerPiece * base.quantity } : {}),
+  };
+}
+
+/**
+ * Production cost carried by a sale from Finished models (part of the warehouse cost line).
+ * Uses the cost pinned at sale time, so later production or price changes never rewrite it.
+ */
+export function stockSaleCost(c: Pick<CalcInput, "modelSource" | "finishedGoodId" | "stockUnitCost" | "quantity">, currentUnitCost = 0) {
+  if (c.modelSource !== "stock" || !c.finishedGoodId) return 0;
+  return (c.stockUnitCost ?? currentUnitCost) * c.quantity;
 }
 
 export function computeCalc(c: CalcInput, refs: CalcRefs) {

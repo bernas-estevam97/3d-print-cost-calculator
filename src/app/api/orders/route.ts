@@ -2,7 +2,7 @@ import { z } from "zod";
 import { route } from "@/lib/api";
 import { calcSchema } from "@/lib/calc";
 import { db } from "@/lib/db";
-import { createOrder } from "@/lib/orders";
+import { createOrder, withPhotos } from "@/lib/orders";
 
 export const orderInclude = {
   client: { select: { id: true, name: true } },
@@ -13,12 +13,13 @@ export const orderInclude = {
 
 export const GET = route(async (_req, _ctx, auth) => {
   // ponytail: capped at 5000 orders (main doc section 9); paginate if a workshop ever gets there
-  return db.order.findMany({
+  const orders = await db.order.findMany({
     where: { workshopId: auth.workshopId },
     include: orderInclude,
     orderBy: { saleDate: "desc" },
     take: 5000,
   });
+  return withPhotos(auth.workshopId, orders);
 });
 
 /** Save order from the calculator. personalUse = "Write off for personal use" (main doc 5.8). */

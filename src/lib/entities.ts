@@ -25,9 +25,13 @@ type Entity = {
   toData?: (d: Record<string, unknown>, workshopId: string, id?: string) => Promise<Record<string, unknown>> | Record<string, unknown>;
   /** add derived fields to list/detail output */
   enrich?: (rows: Row[], workshopId: string) => Promise<Row[]>;
-  /** side effects after create (write-offs) */
+  /** side effects after create (write-offs, stock purchases) */
   afterCreate?: (row: Row, workshopId: string) => Promise<void>;
+  /** side effects after update, with the row as it was before */
+  afterUpdate?: (before: Row, after: Row, workshopId: string) => Promise<void>;
   files?: string[];
+  /** names must be unique per workshop, ignoring case */
+  uniqueName?: boolean;
 };
 
 const str = z.string().trim();
@@ -36,6 +40,18 @@ const money = z.coerce.number().min(0).default(0);
 const nullableNum = z.coerce.number().nullable().optional();
 const nullableId = z.string().nullable().optional();
 const jsonArray = z.array(z.string()).default([]).transform((a) => JSON.stringify(a));
+
+/**
+ * Money spent on stock: every increase of a filament's spools or a shelf item's quantity is a purchase
+ * at the price paid then. Orders and write-offs take stock without coming through here, so nothing is
+ * counted twice, and later price changes never rewrite past purchases.
+ */
+async function recordPurchase(workshopId: string, kind: "filament" | "item", row: Row, quantity: number, unitPrice: number) {
+  if (!(quantity > 0) || !(unitPrice > 0)) return;
+  await db.stockPurchase.create({
+    data: { workshopId, kind, refId: row.id, name: row.name as string, quantity, unitPrice, total: quantity * unitPrice },
+  });
+}
 
 export const ENTITIES: Record<string, Entity> = {
   "printer-groups": { model: "printerGroup", schema: z.object({ name: str.min(1) }), orderBy: { name: "asc" } },
@@ -95,7 +111,10 @@ export const ENTITIES: Record<string, Entity> = {
       colors: jsonArray,
       photoUrl: z.string().nullable().optional(),
       lowStockThresholdG: nullableNum,
+      notes: optStr,
     }),
+    afterCreate: (r, ws) => recordPurchase(ws, "filament", r, r.spoolCount as number, r.spoolPrice as number),
+    afterUpdate: (b, a, ws) => recordPurchase(ws, "filament", a, (a.spoolCount as number) - (b.spoolCount as number), a.spoolPrice as number),
     enrich: async (rows, ws) => {
       const usage = await filamentUsage(ws);
       return rows.map((r) => enrichFilament(r as never, usage) as unknown as Row);
@@ -131,12 +150,12 @@ export const ENTITIES: Record<string, Entity> = {
       });
     },
   },
-  "model-groups": { model: "modelGroup", schema: z.object({ name: str.min(1) }), orderBy: { name: "asc" } },
+  "model-groups": { model: "modelGroup", schema: z.object({ name: str.min(1) }), orderBy: { name: "asc" }, uniqueName: true },
   models: {
     model: "model",
     files: ["photoUrl", "fileUrl"],
     orderBy: { name: "asc" },
-    include: { group: true, filaments: { include: { filament: true } } },
+    include: { group: true, filaments: { include: { filament: true } }, accessories: { include: { shelfItem: true } } },
     schema: z.object({
       name: str.min(1, "Name is required"),
       photoUrl: z.string().nullable().optional(),
@@ -153,11 +172,25 @@ export const ENTITIES: Record<string, Entity> = {
         .array(z.object({ filamentId: z.string().nullable(), grams: z.coerce.number().min(0) }))
         .max(16)
         .default([]),
+      // stock shelf items used per piece (keychain rings, magnets…)
+      accessories: z
+        .array(z.object({ shelfItemId: z.string(), qty: z.coerce.number().positive() }))
+        .max(32)
+        .default([]),
     }),
-    toData: (d, _ws, id) => {
-      const { filaments, ...rest } = d as { filaments?: { filamentId: string | null; grams: number }[] };
-      if (!filaments) return rest;
-      return { ...rest, filaments: { ...(id ? { deleteMany: {} } : {}), create: filaments } };
+    toData: async (d, ws, id) => {
+      const { filaments, accessories, ...rest } = d as {
+        filaments?: { filamentId: string | null; grams: number }[];
+        accessories?: { shelfItemId: string; qty: number }[];
+      };
+      const data: Record<string, unknown> = rest;
+      if (filaments) data.filaments = { ...(id ? { deleteMany: {} } : {}), create: filaments };
+      if (accessories) {
+        // only this workshop's items
+        const own = new Set((await db.shelfItem.findMany({ where: { workshopId: ws, id: { in: accessories.map((a) => a.shelfItemId) } }, select: { id: true } })).map((x) => x.id));
+        data.accessories = { ...(id ? { deleteMany: {} } : {}), create: accessories.filter((a) => own.has(a.shelfItemId)) };
+      }
+      return data;
     },
     enrich: async (rows) =>
       rows.map((r) => ({
@@ -169,7 +202,7 @@ export const ENTITIES: Record<string, Entity> = {
     model: "warehouseShelf",
     files: ["photoUrl"],
     orderBy: [{ sort: "asc" }, { createdAt: "asc" }],
-    include: { items: true, goods: true },
+    include: { items: true, goods: { include: { model: { select: { photoUrl: true } } } } },
     schema: z.object({
       name: str.min(1),
       icon: optStr,
@@ -183,7 +216,9 @@ export const ENTITIES: Record<string, Entity> = {
     model: "shelfItem",
     orderBy: { name: "asc" },
     include: { shelf: true },
-    schema: z.object({ shelfId: z.string(), name: str.min(1), quantity: money, unitCost: money }),
+    schema: z.object({ shelfId: z.string(), name: str.min(1), quantity: money, unitCost: money, pricePaid: money, notes: optStr }),
+    afterCreate: (r, ws) => recordPurchase(ws, "item", r, r.quantity as number, r.pricePaid as number),
+    afterUpdate: (b, a, ws) => recordPurchase(ws, "item", a, (a.quantity as number) - (b.quantity as number), a.pricePaid as number),
   },
   "finished-goods": {
     model: "finishedGood",

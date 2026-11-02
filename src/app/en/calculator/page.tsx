@@ -9,10 +9,10 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
-  Badge, Button, Card, Checkbox, ColorDot, Dialog, Field, Input, ListSkeleton, NumberInput, PageHeader, Segmented, Select, TagInput,
-  Textarea, cn, deleteWithUndo,
+  Badge, Button, Card, Checkbox, ColorDot, ColorDots, Dialog, Field, Input, ListSkeleton, NumberInput, PageHeader, RichSelect, Segmented, Select, TagInput,
+  Textarea, Thumb, cn, deleteWithUndo,
 } from "@/components/ui";
-import { calcSchema, computeCalc, emptyCalc, type CalcInput, type CalcRefs } from "@/lib/calc";
+import { calcSchema, computeCalc, emptyCalc, modelAccessories, modelToCalc, stockSaleCost, type CalcInput, type CalcRefs } from "@/lib/calc";
 import { api, upload, useApi, useList, useMutate, useRemove, useSave, type Settings } from "@/lib/client";
 import { dateInput, money, pct } from "@/lib/format";
 import { parseSlicerFile, SlicerError } from "@/lib/slicer";
@@ -20,7 +20,8 @@ import { STATUSES } from "@/lib/status";
 import { parseJson } from "@/lib/json";
 import type { Client, Model, Order } from "@/lib/types";
 
-type Refs = CalcRefs & {
+type Refs = Omit<CalcRefs, "finishedGoods"> & {
+  finishedGoods: (CalcRefs["finishedGoods"][number] & { photoUrl: string | null; modelId: string | null })[];
   clients: Client[];
   models: Model[];
   loyaltyTiers: { minOrders: number; discountPct: number }[];
@@ -109,7 +110,7 @@ function Calculator({ refs }: { refs: Refs }) {
       // the order's own fields win: they may have been changed on the order page after saving
       api<Order>(`/api/orders/${editId}`).then((o) => load({
         ...parseJson<object>(o.calcInput, {}),
-        name: o.name, clientId: o.clientId, printerId: o.printerId, tips: o.tips, status: o.status,
+        name: o.name, clientId: o.clientId, printerId: o.printerId, tips: o.tipsReceived ? o.tips : 0, status: o.status,
         saleDate: o.saleDate, dueDate: o.dueDate ?? "", tags: parseJson<string[]>(o.tags, []), notes: o.notes,
       })).catch(() => toast.error("Could not load the order"));
     } else if (modelId) {
@@ -135,22 +136,10 @@ function Calculator({ refs }: { refs: Refs }) {
   function applyModel(id: string, base: CalcInput = calc) {
     const model = refs.models.find((x) => x.id === id);
     if (!model) return;
-    const c: CalcInput = {
-      ...base,
-      modelSource: "catalog",
-      modelId: id,
-      name: model.name,
-      materialMode: "stock",
-      materials: model.filaments.length ? model.filaments.map((f) => ({ filamentId: f.filamentId, grams: f.grams })) : base.materials,
-      printH: Math.floor(model.printTimeMin / 60),
-      printMin: Math.round(model.printTimeMin % 60),
-      complexity: (model.complexity as CalcInput["complexity"]) ?? "none",
-      printFileCost: model.extraCosts || base.printFileCost,
-      advanced: base.advanced || model.extraCosts > 0,
-      // a fixed price per piece replaces cost-based pricing (main doc 5.5)
-      ...(model.pricePerPiece != null ? { priceMode: "price" as const, targetPrice: model.pricePerPiece * base.quantity } : {}),
-    };
-    setCalcRaw(c);
+    // drop the accessories of the model picked before
+    const prev = refs.models.find((x) => x.id === base.modelId)?.accessories ?? [];
+    const warehouseItems = base.warehouseItems.filter((w) => !prev.some((a) => a.shelfItemId === w.shelfItemId));
+    setCalcRaw(modelToCalc(model, { ...base, warehouseItems }));
     setTouched(true);
   }
 
@@ -261,13 +250,16 @@ function Calculator({ refs }: { refs: Refs }) {
     }
   }
 
+  const goodPhoto = (g: Refs["finishedGoods"][number]) => g.photoUrl ?? refs.models.find((x) => x.id === g.modelId)?.photoUrl ?? null;
+  const good = calc.modelSource === "stock" ? refs.finishedGoods.find((g) => g.id === calc.finishedGoodId) : undefined;
+  const photo = good ? goodPhoto(good) : refs.models.find((x) => x.id === calc.modelId)?.photoUrl;
   const client = refs.clients.find((c) => c.id === calc.clientId);
   const tier = client ? [...refs.loyaltyTiers].reverse().find((t) => client.ordersCount >= t.minOrders) : undefined;
   const saveTemplate = useSave<Saved>("templates", "Template saved");
 
   const breakdown = (
     <Breakdown
-      calc={calc} setCalc={setCalc} r={r} m={m} settings={s} filled={filled} writeOffCost={writeOffCost}
+      calc={calc} setCalc={setCalc} r={r} m={m} settings={s} filled={filled} writeOffCost={writeOffCost} produced={stockSaleCost(calc, good?.unitCost)}
       onSaveOrder={() => onSaveOrder(false)} onWriteOff={() => onSaveOrder(true)} onWarehouse={() => saveWarehouse.mutate()}
       saving={saveOrder.isPending || saveWarehouse.isPending} editing={!!editId}
     />
@@ -330,26 +322,34 @@ function Calculator({ refs }: { refs: Refs }) {
               onChange={(v) => setCalc({ modelSource: v, modelId: null, finishedGoodId: null })}
               options={[{ value: "catalog", label: "Catalog" }, { value: "stock", label: "Stock" }]}
             />
-            <div className="grid gap-3 sm:grid-cols-[1fr_140px]">
+            <div className="grid gap-3 sm:grid-cols-[auto_1fr_140px]">
+              <Thumb src={photo} className="hidden size-11 self-end sm:flex" />
               {calc.modelSource === "catalog" ? (
                 <Field label="From catalog">
-                  <Select value={calc.modelId ?? ""} onChange={(e) => (e.target.value ? applyModel(e.target.value) : setCalc({ modelId: null }))}>
-                    <option value="">None selected</option>
-                    {refs.models.map((x) => <option key={x.id} value={x.id}>{x.name}{x.pricePerPiece != null ? ` · ${m(x.pricePerPiece)}` : ""}</option>)}
-                  </Select>
+                  <RichSelect
+                    value={calc.modelId ?? ""}
+                    onChange={(v) => (v ? applyModel(v) : setCalc({ modelId: null }))}
+                    placeholder="None selected"
+                    options={[
+                      { value: "", label: "None selected" },
+                      ...refs.models.map((x) => ({ value: x.id, icon: <Thumb src={x.photoUrl} className="size-8" />, label: `${x.name}${x.pricePerPiece != null ? ` · ${m(x.pricePerPiece)}` : ""}` })),
+                    ]}
+                  />
                 </Field>
               ) : (
                 <Field label="Finished good in stock">
-                  <Select
+                  <RichSelect
                     value={calc.finishedGoodId ?? ""}
-                    onChange={(e) => {
-                      const g = refs.finishedGoods.find((x) => x.id === e.target.value);
-                      setCalc(g ? { finishedGoodId: g.id, name: g.name, priceMode: "price", targetPrice: g.unitPrice * calc.quantity } : { finishedGoodId: null });
+                    onChange={(v) => {
+                      const g = refs.finishedGoods.find((x) => x.id === v);
+                      setCalc(g ? { finishedGoodId: g.id, stockUnitCost: null, modelId: g.modelId, name: g.name, priceMode: "price", targetPrice: g.unitPrice * calc.quantity } : { finishedGoodId: null });
                     }}
-                  >
-                    <option value="">None selected</option>
-                    {refs.finishedGoods.map((g) => <option key={g.id} value={g.id} disabled={g.quantity <= 0}>{g.name} · {g.quantity} pcs</option>)}
-                  </Select>
+                    placeholder="None selected"
+                    options={[
+                      { value: "", label: "None selected" },
+                      ...refs.finishedGoods.map((g) => ({ value: g.id, disabled: g.quantity <= 0, icon: <Thumb src={goodPhoto(g)} className="size-8" />, label: `${g.name} · ${g.quantity} pcs` })),
+                    ]}
+                  />
                 </Field>
               )}
               <Field label="Quantity (pcs)">
@@ -361,7 +361,13 @@ function Calculator({ refs }: { refs: Refs }) {
                     const model = refs.models.find((x) => x.id === calc.modelId);
                     const good = refs.finishedGoods.find((x) => x.id === calc.finishedGoodId);
                     const per = calc.modelSource === "stock" ? good?.unitPrice : model?.pricePerPiece;
-                    setCalc({ quantity: qty, ...(per != null && calc.priceMode === "price" ? { targetPrice: per * qty } : {}) });
+                    // the catalog model's accessories are per piece
+                    const acc = calc.modelSource === "catalog" && model ? modelAccessories(model, qty) : [];
+                    setCalc({
+                      quantity: qty,
+                      ...(per != null && calc.priceMode === "price" ? { targetPrice: per * qty } : {}),
+                      ...(acc.length ? { warehouseItems: calc.warehouseItems.map((w) => acc.find((a) => a.shelfItemId === w.shelfItemId) ?? w) } : {}),
+                    });
                   }}
                 />
               </Field>
@@ -387,17 +393,19 @@ function Calculator({ refs }: { refs: Refs }) {
                     {(calc.materials.length ? calc.materials : [{ filamentId: null, grams: 0 }]).map((row, i) => (
                       <div key={i} className="grid grid-cols-[1fr_110px_44px] items-end gap-2">
                         <Field label={i === 0 ? "Filament" : `Additional filament ${i}`}>
-                          <Select
+                          <RichSelect
                             value={row.filamentId ?? ""}
-                            onChange={(e) => {
+                            onChange={(v) => {
                               const list = calc.materials.length ? [...calc.materials] : [{ filamentId: null, grams: 0 }];
-                              list[i] = { ...list[i], filamentId: e.target.value || null };
+                              list[i] = { ...list[i], filamentId: v || null };
                               setCalc({ materials: list });
                             }}
-                          >
-                            <option value="">Choose filament</option>
-                            {refs.filaments.map((f) => <option key={f.id} value={f.id}>{f.name} · {Math.round(f.stockG ?? 0)} g</option>)}
-                          </Select>
+                            placeholder="Choose filament"
+                            options={[
+                              { value: "", label: "Choose filament" },
+                              ...refs.filaments.map((f) => ({ value: f.id, icon: <ColorDots colors={f.colors} />, label: `${f.name} · ${Math.round(f.stockG ?? 0)} g` })),
+                            ]}
+                          />
                         </Field>
                         <Field label="Usage (g)">
                           <NumberInput
@@ -628,8 +636,10 @@ function Calculator({ refs }: { refs: Refs }) {
 }
 
 function Breakdown({
-  calc, setCalc, r, m, settings, filled, writeOffCost, onSaveOrder, onWriteOff, onWarehouse, saving, editing,
+  calc, setCalc, r, m, settings, filled, writeOffCost, produced, onSaveOrder, onWriteOff, onWarehouse, saving, editing,
 }: {
+  /** production cost of a finished model sold from stock */
+  produced: number;
   calc: CalcInput;
   setCalc: (p: Partial<CalcInput>) => void;
   r: ReturnType<typeof computeCalc>["result"];
@@ -650,7 +660,7 @@ function Breakdown({
         <span className="tabular-nums">{m(v)}</span>
       </div>
     ) : null;
-  const production = r.costMaterial + r.costElectricity + r.costPrinter + r.costDryer;
+  const production = r.costMaterial + r.costElectricity + r.costPrinter + r.costDryer + produced;
   const effectiveMarkup = calc.priceMode === "auto" ? settings.defaultMarkupPct : calc.markupPct;
 
   return (
@@ -673,8 +683,9 @@ function Breakdown({
         {line("Electricity", r.costElectricity)}
         {line("Printer", r.costPrinter)}
         {line("Dryer", r.costDryer)}
+        {line("Finished model (production cost)", produced)}
         {line("Labor", r.costLabor)}
-        {line("Stock items", r.costWarehouse)}
+        {line("Stock items", r.costWarehouse - produced)}
         {line("Consumables", r.costConsumables)}
         {line("Post-processing", r.costPostprocessing)}
         {line("Print file", r.costOther)}
@@ -753,7 +764,7 @@ function Breakdown({
         )}
       </div>
 
-      <Field label="Tips">
+      <Field label="Tip" hint="Added to the order total">
         <NumberInput value={calc.tips} onChange={(v) => setCalc({ tips: v })} />
       </Field>
 
