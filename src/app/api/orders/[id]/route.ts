@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { notFound, route } from "@/lib/api";
-import { db } from "@/lib/db";
+import { db, parseJson } from "@/lib/db";
 import { calcSchema } from "@/lib/calc";
 import { deleteOrder, updateOrder, withPhotos } from "@/lib/orders";
 import { payment, tipOf } from "@/lib/payment";
@@ -33,6 +33,7 @@ const patch = z
     printerId: z.string().nullable(),
     assemblyQuantity: z.coerce.number().min(0),
     tags: z.array(z.string()).transform((t) => JSON.stringify(t)),
+    photoUrl: z.string().nullable(),
   })
   .partial();
 
@@ -40,8 +41,10 @@ export const PATCH = route<Ctx>(async (req, ctx, auth) => {
   const { id } = await ctx.params;
   const order = await db.order.findFirst({ where: { id, workshopId: auth.workshopId } });
   if (!order) throw notFound();
-  const d = patch.parse(await req.json());
+  const { photoUrl, ...d } = patch.parse(await req.json());
   const data: Record<string, unknown> = { ...d };
+  // the order photo lives in the calculator input, so editing in the calculator keeps it
+  if (photoUrl !== undefined) data.calcInput = JSON.stringify({ ...parseJson<object>(order.calcInput, {}), photoUrl });
   const next = { ...order, ...d, tags: order.tags };
   if (d.tips !== undefined || d.tipsReceived !== undefined) {
     // the tip is part of revenue while it is switched on (main doc 5.6); amounts replace, never add up

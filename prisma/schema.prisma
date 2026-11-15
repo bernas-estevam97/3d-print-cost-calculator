@@ -89,6 +89,7 @@ model Settings {
   theme                  String  @default("dark")
   accent                 String  @default("orange")
   defaultTaxRegimeId     String?
+  defaultPrinterId       String?
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 }
@@ -202,6 +203,8 @@ model Filament {
   photoUrl           String?
   lowStockThresholdG Float?
   notes              String   @default("")
+  // when the stock was bought; Material expenses are dated by it (null = createdAt)
+  acquiredAt         DateTime?
   orderMaterials     OrderMaterial[]
   modelFilaments     ModelFilament[]
   createdAt          DateTime @default(now())
@@ -413,6 +416,7 @@ model ShelfItem {
   // what the workshop paid per unit; unitCost is what it charges
   pricePaid  Float          @default(0)
   notes      String         @default("")
+  acquiredAt DateTime?
   models     ModelAccessory[]
   createdAt  DateTime       @default(now())
   updatedAt  DateTime       @updatedAt

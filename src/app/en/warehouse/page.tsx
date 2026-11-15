@@ -11,10 +11,10 @@ import {
 import { api, useCurrency, useList, useMutate, useQueryState, useRemove, useSave } from "@/lib/client";
 import { emptyCalc } from "@/lib/calc";
 import { num, toCsv } from "@/lib/csv";
-import { dateUS, money } from "@/lib/format";
+import { dateInput, dateUS, money } from "@/lib/format";
 import type { Client, Filament } from "@/lib/types";
 
-type Item = { id: string; shelfId: string; name: string; quantity: number; unitCost: number; pricePaid?: number; notes?: string };
+type Item = { id: string; shelfId: string; name: string; quantity: number; unitCost: number; pricePaid?: number; notes?: string; acquiredAt?: string | null };
 type Good = Item & { unitPrice: number; photoUrl: string | null; description: string; modelId: string | null };
 type Shelf = {
   id: string; name: string; icon: string; link: string; builtIn: boolean; kind: string; hidden: boolean;
@@ -24,7 +24,7 @@ type WriteOff = { id: string; kind: string; name: string; quantity: number; reas
 
 // CSV per shelf: stock items carry the price paid and notes, finished models a sale price and description
 const BASE_COLUMNS = ["name", "quantity", "unitCost"];
-const ITEM_COLUMNS = [...BASE_COLUMNS, "pricePaid", "notes"];
+const ITEM_COLUMNS = [...BASE_COLUMNS, "pricePaid", "notes", "acquiredAt"];
 const GOOD_COLUMNS = [...BASE_COLUMNS, "unitPrice", "description"];
 
 const ICONS: Record<string, typeof Box> = { spool: Package, key: KeyRound, palette: Palette, box: Box };
@@ -212,14 +212,14 @@ function ShelfView({ shelf, onBack }: { shelf: Shelf; onBack: () => void }) {
                     method: "POST",
                     json: {
                       shelfId: shelf.id, name: r.name, quantity: num(r.quantity), unitCost: num(r.unitCost),
-                      ...(finished ? { unitPrice: num(r.unitPrice), description: r.description ?? "" } : { pricePaid: num(r.pricePaid), notes: r.notes ?? "" }),
+                      ...(finished ? { unitPrice: num(r.unitPrice), description: r.description ?? "" } : { pricePaid: num(r.pricePaid), notes: r.notes ?? "", acquiredAt: r.acquiredAt || null }),
                     },
                   });
                 }
                 return named.length;
               }}
             />
-            <Button variant="primary" onClick={() => setForm({ shelfId: shelf.id, name: "", quantity: 1, unitCost: 0, unitPrice: 0, pricePaid: 0, notes: "" })}><Plus className="size-4" /> Add item</Button>
+            <Button variant="primary" onClick={() => setForm({ shelfId: shelf.id, name: "", quantity: 1, unitCost: 0, unitPrice: 0, pricePaid: 0, notes: "", acquiredAt: dateInput(new Date()) })}><Plus className="size-4" /> Add item</Button>
           </>
         }
       />
@@ -232,7 +232,7 @@ function ShelfView({ shelf, onBack }: { shelf: Shelf; onBack: () => void }) {
               <div className="min-w-0 flex-1 cursor-pointer" onClick={() => setForm(i)}>
                 <div className="font-medium">{i.name}</div>
                 <div className="text-sm text-muted">
-                  {i.quantity} pcs · {money(i.unitCost, currency)} each{finished ? ` · sells for ${money((i as Good).unitPrice, currency)}` : ` · paid ${money(i.pricePaid ?? 0, currency)}`}
+                  {i.quantity} pcs · {money(i.unitCost, currency)} each{finished ? ` · sells for ${money((i as Good).unitPrice, currency)}` : ` · paid ${money(i.pricePaid ?? 0, currency)}${i.acquiredAt ? ` · bought ${dateUS(i.acquiredAt)}` : ""}`}
                 </div>
                 {i.notes && <div className="truncate text-xs text-muted">{i.notes}</div>}
               </div>
@@ -253,8 +253,8 @@ function ShelfView({ shelf, onBack }: { shelf: Shelf; onBack: () => void }) {
 
       <Dialog open={!!form} onClose={() => setForm(null)} title={form?.id ? "Edit item" : "Add item"} footer={
         <Button variant="primary" disabled={!form?.name?.trim()} onClick={() => {
-          const { id, name, quantity, unitCost, unitPrice, pricePaid, notes } = form!;
-          save.mutate({ id, name, quantity, unitCost, ...(finished ? { unitPrice } : { pricePaid, notes }), ...(id ? {} : { shelfId: shelf.id }) }, { onSuccess: () => setForm(null) });
+          const { id, name, quantity, unitCost, unitPrice, pricePaid, notes, acquiredAt } = form!;
+          save.mutate({ id, name, quantity, unitCost, ...(finished ? { unitPrice } : { pricePaid, notes, acquiredAt }), ...(id ? {} : { shelfId: shelf.id }) }, { onSuccess: () => setForm(null) });
         }}>Save</Button>
       }>
         {form && (
@@ -265,8 +265,11 @@ function ShelfView({ shelf, onBack }: { shelf: Shelf; onBack: () => void }) {
             {finished && <Field label="Unit price"><NumberInput value={form.unitPrice} onChange={(v) => setForm({ ...form, unitPrice: v })} /></Field>}
             {!finished && (
               <>
-                <Field label="Price paid (per unit)" hint="What one unit cost you; counted in Material expenses when stock is added">
+                <Field label="Price paid (per unit)" hint="What one unit cost you; counted in Material expenses">
                   <NumberInput value={form.pricePaid} onChange={(v) => setForm({ ...form, pricePaid: v })} />
+                </Field>
+                <Field label="Acquisition date" hint="Counts in Material expenses on this date">
+                  <Input type="date" value={dateInput(form.acquiredAt)} onChange={(e) => setForm({ ...form, acquiredAt: e.target.value || null })} />
                 </Field>
                 <Field label="Notes" className="sm:col-span-2"><Textarea value={form.notes ?? ""} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Supplier, size, colour…" /></Field>
               </>

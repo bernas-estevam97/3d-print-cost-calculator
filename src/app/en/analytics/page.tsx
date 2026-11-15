@@ -8,10 +8,11 @@ import type { AnalyticsData } from "@/lib/analytics";
 import { useApi, useCurrency, useQueryState } from "@/lib/client";
 import { dateInput, dateUS, duration, money, pct } from "@/lib/format";
 
-type Period = "day" | "week" | "month" | "year";
+type Period = "day" | "week" | "month" | "year" | "all";
 
 function bounds(period: Period, anchor: Date) {
   const a = new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate());
+  if (period === "all") return [new Date(0), new Date(9999, 0, 1)];
   if (period === "day") return [a, new Date(a.getFullYear(), a.getMonth(), a.getDate() + 1)];
   if (period === "week") {
     const s = new Date(a);
@@ -32,6 +33,7 @@ function shift(period: Period, anchor: Date, dir: 1 | -1) {
 }
 
 function label(period: Period, [from, to]: Date[]) {
+  if (period === "all") return "All time";
   if (period === "day") return from.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
   if (period === "week") return `${dateUS(from)} – ${dateUS(new Date(to.getTime() - 1))}`;
   if (period === "month") return from.toLocaleDateString("en-US", { month: "long", year: "numeric" });
@@ -72,13 +74,15 @@ export default function AnalyticsPage() {
         ]} />
       </div>
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <Segmented value={period} onChange={setPeriod} options={[{ value: "day", label: "Day" }, { value: "week", label: "Week" }, { value: "month", label: "Month" }, { value: "year", label: "Year" }]} />
+        <Segmented value={period} onChange={setPeriod} options={[{ value: "day", label: "Day" }, { value: "week", label: "Week" }, { value: "month", label: "Month" }, { value: "year", label: "Year" }, { value: "all", label: "All time" }]} />
+        {period !== "all" && <>
         <div className="flex items-center gap-1">
           <Button size="icon" variant="ghost" aria-label="Previous period" onClick={() => setAnchor(dateInput(shift(period as Period, anchor, -1)))}><ChevronLeft className="size-5" /></Button>
           <span className="min-w-36 text-center text-sm font-medium">{label(period as Period, range)}</span>
           <Button size="icon" variant="ghost" aria-label="Next period" onClick={() => setAnchor(dateInput(shift(period as Period, anchor, 1)))}><ChevronRight className="size-5" /></Button>
         </div>
         <Input type="date" aria-label="Pick a date" className="w-40" value={dateInput(anchor)} onChange={(e) => e.target.value && setAnchor(e.target.value)} />
+        </>}
         {d && <span className="text-sm text-muted">{d.orderCount} orders in period</span>}
       </div>
       {d?.capped && <p className="mb-3 flex items-center gap-2 text-sm text-amber-500"><AlertTriangle className="size-4" /> More than 5000 orders: totals may be incomplete</p>}
@@ -89,14 +93,14 @@ export default function AnalyticsPage() {
             <div className="space-y-4">
               <div className="grid gap-3 lg:grid-cols-[1.2fr_1fr_1fr_1fr]">
                 <div className="rounded-2xl bg-gradient-to-br from-accent to-accent/60 p-5 text-accent-fg">
-                  <div className="text-sm opacity-90">Today</div>
-                  <div className="text-3xl font-bold tabular-nums">{m(d.overview.today.profit)}</div>
-                  <div className="text-sm opacity-90">profit · {duration(d.overview.today.printMin)} printing</div>
-                  <div className="mt-2 text-sm">{d.overview.today.urgent ? `${d.overview.today.urgent} orders due within 72 h` : "No urgent orders in the next 72 h"}</div>
+                  <div className="text-sm opacity-90">Net profit</div>
+                  <div className="text-3xl font-bold tabular-nums">{m(d.overview.netProfit)}</div>
+                  <div className="text-sm opacity-90">Margin {pct(d.overview.margin)}</div>
+                  <div className="mt-2 text-sm">Today {m(d.overview.today.profit)} · {duration(d.overview.today.printMin)} printing · {d.overview.today.urgent ? `${d.overview.today.urgent} due within 72 h` : "nothing due within 72 h"}</div>
                 </div>
                 <Kpi label="Revenue" value={m(d.overview.revenue)} sub={`${d.overview.count} paid or partly paid orders`} />
-                <Kpi label="Net profit" value={m(d.overview.netProfit)} />
-                <Kpi label="Margin" value={pct(d.overview.margin)} />
+                <Kpi label="Total costs" value={m(d.finance.totalCost)} />
+                <Kpi label="Tips received" value={m(d.overview.tips)} sub="Included in revenue and profit" />
               </div>
               <Card title="12-month dynamics">
                 <MultiSeries data={d.overview.dynamics.map((x) => ({ ...x, month: shortMonth(x.month) }))} x="month" series={[{ key: "revenue", name: "Revenue" }, { key: "profit", name: "Net profit" }]} format={mc} />
@@ -114,9 +118,10 @@ export default function AnalyticsPage() {
 
           {tab === "finance" && (
             <div className="space-y-4">
-              <div className="grid gap-3 sm:grid-cols-3">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <Kpi label="Paid sales" value={m(d.finance.paidSales.amount)} sub={`${d.finance.paidSales.count} orders`} />
                 <Kpi label="Total cost" value={m(d.finance.totalCost)} />
+                <Kpi label="Material expenses" value={m(d.finance.materialExpenses)} sub="Stock acquired in this period" />
                 <Kpi label="Accounts receivable" value={m(d.finance.receivable)} sub="Still owed on unpaid and partly paid orders" />
               </div>
               <div className="grid gap-4 lg:grid-cols-2">

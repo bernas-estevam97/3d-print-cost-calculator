@@ -13,7 +13,7 @@ import {
 import { api, useCurrency, useList, useMutate, useQueryState } from "@/lib/client";
 import { dateLong, duration, money, pct } from "@/lib/format";
 import { ORDER_COLUMNS, ordersCsv } from "@/lib/order-csv";
-import { payment } from "@/lib/payment";
+import { payment, tipOf } from "@/lib/payment";
 import { STATUSES } from "@/lib/status";
 import type { Client, Order } from "@/lib/types";
 
@@ -163,6 +163,7 @@ export default function OrdersPage() {
             ) : "—" },
             { key: "cost", header: "Cost", sort: (o) => o.totalCost, cell: (o) => m(o.totalCost) },
             { key: "price", header: "Price", sort: (o) => o.salePrice, cell: (o) => m(o.salePrice) },
+            { key: "tips", header: "Tips", sort: (o) => tipOf(o), cell: (o) => (tipOf(o) ? m(tipOf(o)) : "—") },
             { key: "profit", header: "Profit", sort: (o) => o.profit, cell: (o) => <span className={o.profit >= 0 ? "text-green-500" : "text-red-500"}>{m(o.profit)}</span> },
             { key: "margin", header: "Margin", sort: (o) => o.marginPct, cell: (o) => pct(o.marginPct) },
             { key: "del", header: "", fixed: true, cell: (o) => (

@@ -32,6 +32,7 @@ const MARKUP_BASE: [keyof Settings, string, string][] = [
 function Calculations() {
   const { data } = useSettings();
   const save = useSaveSettings();
+  const { data: printers = [] } = useList<PrinterRow>("printers");
   const [s, setS] = useState<Settings | null>(null);
   // eslint-disable-next-line react-hooks/set-state-in-effect -- start editing from the loaded settings
   useEffect(() => { if (data && !s) setS(data); }, [data, s]);
@@ -42,6 +43,14 @@ function Calculations() {
 
   return (
     <div className="max-w-3xl space-y-4">
+      <Card title="Default printer">
+        <Field label="Selected for new orders" className="max-w-sm">
+          <Select value={s.defaultPrinterId ?? ""} onChange={(e) => set("defaultPrinterId", e.target.value || null)}>
+            <option value="">No default</option>
+            {printers.map((p) => <option key={p.id} value={p.id}>{p.internalName || p.model}</option>)}
+          </Select>
+        </Field>
+      </Card>
       <Card title="Electricity">
         <Segmented value={s.electricityMode} onChange={(v) => set("electricityMode", v)} options={[{ value: "single", label: "Single tariff" }, { value: "day_night", label: "Day / Night" }]} />
         {s.electricityMode === "day_night" && <p className="mt-2 text-xs text-amber-500">Day/Night tariffs are not supported yet; the single tariff below is used.</p>}

@@ -23,6 +23,7 @@ const schema = z
     theme: z.enum(["light", "dark", "system"]),
     accent: z.enum(["orange", "blue", "red", "slate", "green", "purple"]),
     defaultTaxRegimeId: z.string().nullable(),
+    defaultPrinterId: z.string().nullable(),
   })
   .partial();
 

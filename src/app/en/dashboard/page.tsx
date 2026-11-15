@@ -55,7 +55,7 @@ const greeting = () => {
 };
 
 export default function DashboardPage() {
-  const [range, setRange] = useLocal<"week" | "month">("dashboard:range", "week");
+  const [range, setRange] = useLocal<"week" | "month" | "all">("dashboard:range", "week");
   const { data: d, isLoading } = useApi<Dash>(`/api/dashboard?range=${range}`);
   const me = useMe().data;
   const currency = useCurrency();
@@ -89,7 +89,7 @@ export default function DashboardPage() {
       </div>
 
       <div className="mb-3 flex justify-end">
-        <Segmented value={range} onChange={setRange} options={[{ value: "week", label: "Week" }, { value: "month", label: "Month" }]} />
+        <Segmented value={range} onChange={setRange} options={[{ value: "week", label: "Week" }, { value: "month", label: "Month" }, { value: "all", label: "All time" }]} />
       </div>
       {isLoading || !d ? <ListSkeleton rows={6} /> : (
         <>
@@ -138,9 +138,9 @@ export default function DashboardPage() {
 
           <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
             <Card title="Material expenses">
-              <div className="text-2xl font-bold tabular-nums">{m(d.expenses.total)}</div>
+              <div className="text-2xl font-bold tabular-nums">{m(range === "all" ? d.expenses.total : d.expenses.period)}</div>
               <p className="mb-3 text-xs text-muted">
-                Spent on stock purchases · {m(d.expenses.period)} this {range} · filaments {m(d.expenses.filament)} · stock items {m(d.expenses.items)}
+                {range === "all" ? "Price paid for stock" : `Stock acquired this ${range} · all time ${m(d.expenses.total)}`} · filaments {m(d.expenses.filament)} · stock items {m(d.expenses.items)}
               </p>
               <BarList items={d.expenses.byMaterial.map((x) => ({ name: x.name, value: x.total }))} format={(v) => m(v)} />
             </Card>

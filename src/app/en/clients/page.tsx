@@ -1,6 +1,6 @@
 "use client";
 // Clients, main doc 6.5.
-import { Plus, Search, Send, Trash2 } from "lucide-react";
+import { Plus, Search, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Avatar, ClientFields, pickClient } from "@/components/client-form";
@@ -19,7 +19,7 @@ const LEVEL_CLS: Record<string, string> = {
 };
 
 // CSV: plain fields plus the category by name (created on import when missing)
-const CLIENT_FIELDS = ["name", "companyName", "contactPerson", "phone", "email", "telegram", "address", "source", "discountPct", "taxId", "signer", "note"] as const;
+const CLIENT_FIELDS = ["name", "companyName", "contactPerson", "phone", "email", "address", "discountPct", "taxId", "signer", "note"] as const;
 const CLIENT_COLUMNS = [...CLIENT_FIELDS, "category"];
 const clientsCsv = (rows: Client[]) => toCsv(CLIENT_COLUMNS, rows.map((c) => [...CLIENT_FIELDS.map((k) => c[k]), c.category?.name]));
 
@@ -90,9 +90,6 @@ export default function ClientsPage() {
               <div className="flex items-center gap-3"><Avatar c={c} /><div><div className="font-medium">{c.name}</div>{c.category && <div className="text-xs text-muted">{c.category.name}</div>}</div></div>
             ) },
             { key: "phone", header: "Phone", cell: (c) => c.phone ? <a href={`tel:${c.phone}`} onClick={(e) => e.stopPropagation()} className="hover:text-accent">{c.phone}</a> : "—" },
-            { key: "telegram", header: "Telegram", cell: (c) => c.telegram ? (
-              <a href={`https://t.me/${c.telegram.replace(/^@/, "")}`} target="_blank" rel="noreferrer" aria-label={`Telegram ${c.telegram}`} onClick={(e) => e.stopPropagation()} className="text-blue-500"><Send className="size-4" /></a>
-            ) : "—" },
             { key: "level", header: "Level", sort: (c) => c.ordersCount, cell: (c) => <Badge className={LEVEL_CLS[c.level]}>{c.level}</Badge> },
             { key: "orders", header: "Orders", sort: (c) => c.ordersCount, cell: (c) => c.ordersCount },
             { key: "completed", header: "Completed", sort: (c) => c.completedAmount, cell: (c) => money(c.completedAmount, currency) },

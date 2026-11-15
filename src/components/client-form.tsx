@@ -5,7 +5,7 @@ import type { Client } from "@/lib/types";
 import { Button, Field, Input, NumberInput, PhotoInput, Select, Textarea } from "./ui";
 
 export const CLIENT_FIELDS = [
-  "name", "phone", "email", "address", "source", "discountPct", "categoryId", "photoUrl", "telegram", "contactPerson", "signer",
+  "name", "phone", "email", "address", "discountPct", "categoryId", "photoUrl", "contactPerson", "signer",
   "companyName", "taxId", "note",
 ] as const;
 
@@ -33,8 +33,6 @@ export function ClientFields({ value, onChange, section = "contacts" }: { value:
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Phone"><Input type="tel" value={value.phone ?? ""} onChange={(e) => set("phone", e.target.value)} /></Field>
         <Field label="Email"><Input type="email" value={value.email ?? ""} onChange={(e) => set("email", e.target.value)} /></Field>
-        <Field label="Telegram"><Input value={value.telegram ?? ""} onChange={(e) => set("telegram", e.target.value)} placeholder="@username" /></Field>
-        <Field label="Source"><Input value={value.source ?? ""} onChange={(e) => set("source", e.target.value)} placeholder="Instagram, OLX, word of mouth…" /></Field>
         <Field label="Discount (%)"><NumberInput value={value.discountPct} onChange={(v) => set("discountPct", v)} suffix="%" /></Field>
         <Field label="Category">
           {newCat !== null ? (

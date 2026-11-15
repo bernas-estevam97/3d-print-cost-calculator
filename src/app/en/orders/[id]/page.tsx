@@ -7,7 +7,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
 import {
-  Button, Card, ColorDot, Dialog, Field, Input, Kpi, ListSkeleton, NumberInput, PaidBadge, Select, StatusBadge, Switch, Thumb, cn,
+  Button, Card, ColorDot, Dialog, Field, Input, Kpi, ListSkeleton, NumberInput, PaidBadge, PhotoInput, Select, StatusBadge, Switch, cn,
 } from "@/components/ui";
 import { api, useApi, useCurrency, useMutate } from "@/lib/client";
 import { stockSaleCost, type CalcInput } from "@/lib/calc";
@@ -131,7 +131,7 @@ export default function OrderDetail() {
         <div className="space-y-4">
           <Card title="Model breakdown">
             <div className="flex items-center gap-3">
-              <Thumb src={o.photoUrl} className="size-16" />
+              <PhotoInput value={o.photoUrl} onChange={(u) => patch.mutate({ photoUrl: u })} label="Image" />
               <div className="min-w-0">
                 <div className="font-medium">{o.name}</div>
                 <div className="text-sm text-muted">{o.quantity} pcs · {Math.round(grams * 100) / 100} g</div>

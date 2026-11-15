@@ -21,7 +21,7 @@ export async function loadRefs(workshopId: string): Promise<CalcRefs> {
   return { settings: pricingSettings(settings), filaments, printers, dryers, shelfItems, finishedGoods, taxRegimes, marketplaceFees };
 }
 
-/** Picture for each order: its catalog model's photo, else the photo of the finished model it sold. */
+/** Picture for each order: its own photo, else its catalog model's photo, else the photo of the finished model it sold. */
 export async function withPhotos<O extends { modelId: string | null; calcInput: string }>(workshopId: string, orders: O[]) {
   const goodIds = orders.map((o) => parseJson<{ finishedGoodId?: string | null }>(o.calcInput, {}).finishedGoodId).filter((x): x is string => !!x);
   const [models, goods] = await Promise.all([
@@ -31,8 +31,8 @@ export async function withPhotos<O extends { modelId: string | null; calcInput: 
   const modelPhoto = new Map(models.map((m) => [m.id, m.photoUrl]));
   const goodPhoto = new Map(goods.map((g) => [g.id, g.photoUrl ?? g.model?.photoUrl ?? null]));
   return orders.map((o) => {
-    const goodId = parseJson<{ finishedGoodId?: string | null }>(o.calcInput, {}).finishedGoodId;
-    return { ...o, photoUrl: (o.modelId && modelPhoto.get(o.modelId)) || (goodId && goodPhoto.get(goodId)) || null };
+    const { finishedGoodId: goodId, photoUrl: own } = parseJson<{ finishedGoodId?: string | null; photoUrl?: string | null }>(o.calcInput, {});
+    return { ...o, photoUrl: own || (o.modelId && modelPhoto.get(o.modelId)) || (goodId && goodPhoto.get(goodId)) || null };
   });
 }
 

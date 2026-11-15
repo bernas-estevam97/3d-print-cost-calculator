@@ -149,3 +149,17 @@ describe("material deduction", () => {
     expect(again.negotiation).toBeTruthy();
   });
 });
+
+describe("material expenses by acquisition date", () => {
+  it("counts stock only in the period it was acquired", async () => {
+    const { materialExpenses } = await import("./analytics");
+    const shelf = await m.db.warehouseShelf.create({ data: { workshopId: ws, name: "Parts" } });
+    await m.db.shelfItem.create({ data: { workshopId: ws, shelfId: shelf.id, name: "Magnet", quantity: 10, pricePaid: 0.5, acquiredAt: new Date("2025-03-10") } });
+    await m.db.filament.update({ where: { id: filamentId }, data: { acquiredAt: new Date("2025-06-01") } });
+    const march = await materialExpenses(ws, new Date("2025-03-01"), new Date("2025-04-01"));
+    expect(march.total).toBe(5);
+    const year = await materialExpenses(ws, new Date("2025-01-01"), new Date("2026-01-01"));
+    expect(year.filament).toBe(20);
+    expect(year.items).toBe(5);
+  });
+});

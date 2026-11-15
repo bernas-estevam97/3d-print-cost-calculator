@@ -10,19 +10,19 @@ import {
 } from "@/components/ui";
 import { api, useCurrency, useList, useMutate, useQueryState, useRemove, useSave } from "@/lib/client";
 import { num, toCsv } from "@/lib/csv";
-import { grams, money } from "@/lib/format";
+import { dateInput, grams, money } from "@/lib/format";
 import type { Filament } from "@/lib/types";
 
 type CatalogItem = { id: string; kind: string; name: string };
 
 const blank = (): Partial<Filament> => ({
   name: "", brand: "Bambu Lab", type: "PLA", modifier: null, purchaseLink: "", spoolPrice: 0, spoolWeightG: 1000, spoolCount: 1,
-  usedFromSpoolG: 0, colors: ["#ffffff"], photoUrl: null, lowStockThresholdG: null, notes: "",
+  usedFromSpoolG: 0, colors: ["#ffffff"], photoUrl: null, lowStockThresholdG: null, notes: "", acquiredAt: dateInput(new Date()),
 });
 
 // CSV: the editable fields; colors are space-separated hex codes. Older files with one "color" column still import.
 // usedFromSpoolG is exported as everything used so far (manual + orders), so the imported copy shows the same stock.
-const FILAMENT_FIELDS = ["name", "brand", "type", "modifier", "spoolPrice", "spoolWeightG", "spoolCount", "lowStockThresholdG", "purchaseLink", "notes"] as const;
+const FILAMENT_FIELDS = ["name", "brand", "type", "modifier", "spoolPrice", "spoolWeightG", "spoolCount", "lowStockThresholdG", "purchaseLink", "notes", "acquiredAt"] as const;
 const FILAMENT_COLUMNS = [...FILAMENT_FIELDS, "usedFromSpoolG", "colors"];
 const filamentsCsv = (rows: Filament[]) =>
   toCsv(FILAMENT_COLUMNS, rows.map((f) => [...FILAMENT_FIELDS.map((k) => f[k]), f.spoolCount * f.spoolWeightG - f.stockG, f.colors.join(" ")]));
@@ -36,6 +36,7 @@ async function importFilaments(rows: Record<string, string>[]) {
         name: r.name ?? "", brand: r.brand ?? "", type: r.type || "PLA", modifier: r.modifier || null, purchaseLink: r.purchaseLink || null, colors,
         spoolPrice: num(r.spoolPrice), spoolWeightG: num(r.spoolWeightG, 1000), spoolCount: num(r.spoolCount, 1), usedFromSpoolG: num(r.usedFromSpoolG),
         lowStockThresholdG: r.lowStockThresholdG ? num(r.lowStockThresholdG) : null, notes: r.notes ?? "",
+        acquiredAt: r.acquiredAt || null,
       },
     });
   }
@@ -89,6 +90,9 @@ function FilamentForm({ value, onChange, catalogs }: { value: Partial<Filament>;
           </div>
         </Field>
         <Field label="Used from spool (g)" hint="Already used before adding here"><NumberInput value={value.usedFromSpoolG} onChange={(v) => set("usedFromSpoolG", v)} /></Field>
+        <Field label="Acquisition date" hint="Counts in Material expenses on this date">
+          <Input type="date" value={dateInput(value.acquiredAt)} onChange={(e) => set("acquiredAt", e.target.value || null)} />
+        </Field>
         <Field label="Low stock alert (g)" hint="Optional"><NumberInput value={value.lowStockThresholdG ?? 0} onChange={(v) => set("lowStockThresholdG", v || null)} /></Field>
       </div>
       <Field label="Colors">
@@ -149,8 +153,8 @@ export default function FilamentsPage() {
   const toggle = (id: string) => setSelected(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]);
 
   const submit = () => {
-    const { id, name, brand, type, modifier, purchaseLink, spoolPrice, spoolWeightG, spoolCount, usedFromSpoolG, colors, photoUrl, lowStockThresholdG, notes } = form!;
-    save.mutate({ id, name, brand, type, modifier, purchaseLink, spoolPrice, spoolWeightG, spoolCount, usedFromSpoolG, colors, photoUrl, lowStockThresholdG, notes }, { onSuccess: () => setForm(null) });
+    const { id, name, brand, type, modifier, purchaseLink, spoolPrice, spoolWeightG, spoolCount, usedFromSpoolG, colors, photoUrl, lowStockThresholdG, notes, acquiredAt } = form!;
+    save.mutate({ id, name, brand, type, modifier, purchaseLink, spoolPrice, spoolWeightG, spoolCount, usedFromSpoolG, colors, photoUrl, lowStockThresholdG, notes, acquiredAt }, { onSuccess: () => setForm(null) });
   };
 
   return (

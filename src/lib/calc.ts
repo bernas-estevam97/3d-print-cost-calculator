@@ -55,6 +55,8 @@ export const calcSchema = z.object({
   notes: z.string().catch(""),
   includeLabor: z.boolean().catch(true),
   slicerFileUrl: z.string().nullable().catch(null),
+  // picture the user attached to the order; wins over the model's photo
+  photoUrl: z.string().nullable().catch(null),
 });
 
 export type CalcInput = z.infer<typeof calcSchema>;

@@ -24,7 +24,7 @@ export type Order = {
 export type Filament = {
   id: string; name: string; brand: string; type: string; modifier: string | null; purchaseLink: string | null; spoolPrice: number;
   spoolWeightG: number; spoolCount: number; usedFromSpoolG: number; colors: string[]; photoUrl: string | null;
-  lowStockThresholdG: number | null; notes: string; pricePerKg: number; stockG: number; lastsDays: number | null;
+  lowStockThresholdG: number | null; notes: string; acquiredAt: string | null; pricePerKg: number; stockG: number; lastsDays: number | null;
 };
 
 export type Client = {

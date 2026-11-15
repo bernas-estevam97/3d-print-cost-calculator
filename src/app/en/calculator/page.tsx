@@ -9,11 +9,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
-  Badge, Button, Card, Checkbox, ColorDot, ColorDots, Dialog, Field, Input, ListSkeleton, NumberInput, PageHeader, RichSelect, Segmented, Select, TagInput,
+  Badge, Button, Card, Checkbox, ColorDot, ColorDots, Dialog, Field, Input, ListSkeleton, NumberInput, PageHeader, PhotoInput, RichSelect, Segmented, Select, TagInput,
   Textarea, Thumb, cn, deleteWithUndo,
 } from "@/components/ui";
 import { calcSchema, computeCalc, emptyCalc, modelAccessories, modelToCalc, stockSaleCost, type CalcInput, type CalcRefs } from "@/lib/calc";
-import { api, upload, useApi, useList, useMutate, useRemove, useSave, type Settings } from "@/lib/client";
+import { api, upload, useApi, useList, useMutate, useRemove, useSave, useSaveSettings, type Settings } from "@/lib/client";
 import { dateInput, money, pct } from "@/lib/format";
 import { parseSlicerFile, SlicerError } from "@/lib/slicer";
 import { STATUSES } from "@/lib/status";
@@ -80,6 +80,7 @@ function Calculator({ refs }: { refs: Refs }) {
   const fresh = (): CalcInput => ({
     ...emptyCalc(),
     taxRegimeId: s.defaultTaxRegimeId,
+    printerId: refs.printers.some((p) => p.id === s.defaultPrinterId) ? s.defaultPrinterId : null,
     markupPct: s.defaultMarkupPct,
     saleDate: new Date().toISOString(),
   });
@@ -252,10 +253,11 @@ function Calculator({ refs }: { refs: Refs }) {
 
   const goodPhoto = (g: Refs["finishedGoods"][number]) => g.photoUrl ?? refs.models.find((x) => x.id === g.modelId)?.photoUrl ?? null;
   const good = calc.modelSource === "stock" ? refs.finishedGoods.find((g) => g.id === calc.finishedGoodId) : undefined;
-  const photo = good ? goodPhoto(good) : refs.models.find((x) => x.id === calc.modelId)?.photoUrl;
+  const photo = calc.photoUrl ?? (good ? goodPhoto(good) : refs.models.find((x) => x.id === calc.modelId)?.photoUrl);
   const client = refs.clients.find((c) => c.id === calc.clientId);
   const tier = client ? [...refs.loyaltyTiers].reverse().find((t) => client.ordersCount >= t.minOrders) : undefined;
   const saveTemplate = useSave<Saved>("templates", "Template saved");
+  const saveSettings = useSaveSettings("Default printer updated");
 
   const breakdown = (
     <Breakdown
@@ -317,6 +319,7 @@ function Calculator({ refs }: { refs: Refs }) {
 
           <Section title="Model">
             <Field label="Model name"><Input value={calc.name} onChange={(e) => setCalc({ name: e.target.value })} placeholder="e.g. Dragon figurine" /></Field>
+            <PhotoInput value={calc.photoUrl} onChange={(u) => setCalc({ photoUrl: u })} label="Order image" />
             <Segmented
               value={calc.modelSource}
               onChange={(v) => setCalc({ modelSource: v, modelId: null, finishedGoodId: null })}
@@ -446,6 +449,13 @@ function Calculator({ refs }: { refs: Refs }) {
                     {refs.printers.map((p) => <option key={p.id} value={p.id}>{p.internalName || p.model} · {p.powerW} W</option>)}
                   </Select>
                 </Field>
+                {calc.printerId && (
+                  <Checkbox
+                    label="Default printer for new orders"
+                    checked={calc.printerId === s.defaultPrinterId}
+                    onChange={(v) => saveSettings.mutate({ defaultPrinterId: v ? calc.printerId : null })}
+                  />
+                )}
                 {!calc.printerId && (
                   <p className="flex items-start gap-2 text-sm text-amber-500">
                     <AlertTriangle className="mt-0.5 size-4 shrink-0" /> No printer selected: depreciation and electricity aren&apos;t included, the price will come out lower than real

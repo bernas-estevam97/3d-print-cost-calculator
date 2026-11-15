@@ -4,7 +4,7 @@
 //   by sale date (cash actually earned).
 // - Personal-use and cancelled orders never count as sales.
 import { db, parseJson } from "./db";
-import { payment } from "./payment";
+import { payment, tipOf } from "./payment";
 import { filamentsWithStock, printerStats, enrichPrinter } from "./derive";
 import { CONSUMING, IN_PROGRESS, STATUSES, STEPPER, type StatusKey } from "./status";
 
@@ -46,7 +46,34 @@ function money(orders: O[]) {
   const revenue = sum(paid, (x) => x.o.revenue * x.share);
   const profit = sum(paid, (x) => x.o.profit * x.share);
   const netProfit = sum(paid, (x) => x.o.netProfit * x.share);
-  return { revenue, profit, netProfit, margin: revenue > 0 ? (netProfit / revenue) * 100 : 0, count: paid.length };
+  // tips are part of revenue and profit, never of the price
+  const tips = sum(paid, (x) => tipOf(x.o) * x.share);
+  return { revenue, profit, netProfit, tips, margin: revenue > 0 ? (netProfit / revenue) * 100 : 0, count: paid.length };
+}
+
+/**
+ * Material expenses: price paid for stock acquired in [from, to), dated by each stock's acquisition date.
+ * Filaments: spools x spool price. Stock items: quantity x price paid.
+ * ponytail: one date per stock row, so a restock re-dates the whole row and consumed stock items drop out;
+ * date each purchase (StockPurchase rows) if per-batch history matters.
+ */
+export async function materialExpenses(workshopId: string, from: Date, to: Date) {
+  const [filaments, items] = await Promise.all([
+    db.filament.findMany({ where: { workshopId }, select: { name: true, spoolCount: true, spoolPrice: true, acquiredAt: true, createdAt: true } }),
+    db.shelfItem.findMany({ where: { workshopId }, select: { name: true, quantity: true, pricePaid: true, acquiredAt: true, createdAt: true } }),
+  ]);
+  const spent = [
+    ...filaments.map((f) => ({ kind: "filament", name: f.name, date: f.acquiredAt ?? f.createdAt, total: f.spoolCount * f.spoolPrice })),
+    ...items.map((i) => ({ kind: "item", name: i.name, date: i.acquiredAt ?? i.createdAt, total: Math.max(0, i.quantity) * i.pricePaid })),
+  ].filter((x) => x.total > 0 && inRange(x.date, from, to));
+  const by = new Map<string, number>();
+  for (const p of spent) by.set(p.name, (by.get(p.name) ?? 0) + p.total);
+  return {
+    total: sum(spent, (p) => p.total),
+    filament: sum(spent.filter((p) => p.kind === "filament"), (p) => p.total),
+    items: sum(spent.filter((p) => p.kind === "item"), (p) => p.total),
+    byMaterial: [...by.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([name, total]) => ({ name, total })),
+  };
 }
 
 export async function analytics(workshopId: string, from: Date, to: Date) {
@@ -189,6 +216,7 @@ export async function analytics(workshopId: string, from: Date, to: Date) {
       lossModels: models.filter((m) => m.profit < 0).sort((a, b) => a.profit - b.profit),
     },
     finance: {
+      materialExpenses: (await materialExpenses(workshopId, from, to)).total,
       paidSales: { count: paid.length, amount: sum(paid, (o) => o.revenue * payment(o).share) },
       totalCost,
       receivable: sum(unpaid, (o) => payment(o).balance),
@@ -217,23 +245,25 @@ export async function analytics(workshopId: string, from: Date, to: Date) {
   };
 }
 
-export async function dashboard(workshopId: string, range: "week" | "month") {
+export async function dashboard(workshopId: string, range: "week" | "month" | "all") {
   const { orders } = await loadOrders(workshopId);
   const now = new Date();
-  const days = range === "week" ? 7 : 30;
   const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
-  const start = new Date(end.getTime() - days * DAY);
+  const days = range === "week" ? 7 : 30;
+  const start = range === "all" ? new Date(0) : new Date(end.getTime() - days * DAY);
   const prevStart = new Date(start.getTime() - days * DAY);
   const cur = money(orders.filter((o) => inRange(o.saleDate, start, end)));
   const prev = money(orders.filter((o) => inRange(o.saleDate, prevStart, start)));
-  const change = (a: number, b: number) => (b > 0 ? ((a - b) / b) * 100 : null);
+  const change = (a: number, b: number) => (range !== "all" && b > 0 ? ((a - b) / b) * 100 : null);
 
-  // mini bars: last 7 days (week) or last 12 weeks (month)
+  // mini bars: last 7 days (week), last 12 weeks (month) or last 12 months (all)
   const buckets = range === "week"
-    ? Array.from({ length: 7 }, (_, i) => ({ start: new Date(end.getTime() - (7 - i) * DAY), len: DAY }))
-    : Array.from({ length: 12 }, (_, i) => ({ start: new Date(end.getTime() - (12 - i) * 7 * DAY), len: 7 * DAY }));
+    ? Array.from({ length: 7 }, (_, i) => ({ start: new Date(end.getTime() - (7 - i) * DAY), end: new Date(end.getTime() - (6 - i) * DAY) }))
+    : range === "month"
+      ? Array.from({ length: 12 }, (_, i) => ({ start: new Date(end.getTime() - (12 - i) * 7 * DAY), end: new Date(end.getTime() - (11 - i) * 7 * DAY) }))
+      : Array.from({ length: 12 }, (_, i) => ({ start: new Date(now.getFullYear(), now.getMonth() - 11 + i, 1), end: new Date(now.getFullYear(), now.getMonth() - 10 + i, 1) }));
   const series = buckets.map((b) => {
-    const xs = orders.filter((o) => inRange(o.saleDate, b.start, new Date(b.start.getTime() + b.len)));
+    const xs = orders.filter((o) => inRange(o.saleDate, b.start, b.end));
     const mo = money(xs);
     return { revenue: mo.revenue, profit: mo.profit, inProgress: xs.filter((o) => IN_PROGRESS.includes(o.status as never)).length };
   });
@@ -253,10 +283,7 @@ export async function dashboard(workshopId: string, range: "week" | "month") {
     }
   }
   const filaments = await filamentsWithStock(workshopId);
-  // money actually spent buying stock (purchase history), not the value of what is left
-  const purchases = await db.stockPurchase.findMany({ where: { workshopId }, select: { kind: true, name: true, total: true, createdAt: true } });
-  const spentBy = new Map<string, number>();
-  for (const p of purchases) spentBy.set(p.name, (spentBy.get(p.name) ?? 0) + p.total);
+  const [allTime, inPeriod] = await Promise.all([materialExpenses(workshopId, new Date(0), end), materialExpenses(workshopId, start, end)]);
   const events = [
     ...orders.slice(0, 5).map((o) => ({ kind: "order", text: `New order ${o.name}`, date: o.saleDate, href: `/en/orders/${o.id}` })),
     ...clientRows.slice(0, 5).map((c) => ({ kind: "client", text: `New client ${c.name}`, date: c.createdAt, href: `/en/clients/${c.id}` })),
@@ -273,13 +300,7 @@ export async function dashboard(workshopId: string, range: "week" | "month") {
     topMaterials: { total: sum([...matTotals.values()], (m) => m.grams), items: [...matTotals.entries()].sort((a, b) => b[1].grams - a[1].grams).slice(0, 5).map(([name, v]) => ({ name, ...v })) },
     weekday,
     events,
-    expenses: {
-      total: sum(purchases, (p) => p.total),
-      period: sum(purchases.filter((p) => inRange(p.createdAt, start, end)), (p) => p.total),
-      filament: sum(purchases.filter((p) => p.kind === "filament"), (p) => p.total),
-      items: sum(purchases.filter((p) => p.kind === "item"), (p) => p.total),
-      byMaterial: [...spentBy.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([name, total]) => ({ name, total })),
-    },
+    expenses: { ...inPeriod, period: inPeriod.total, total: allTime.total },
     restock: filaments.filter((f) => f.lastsDays != null && f.lastsDays <= 14).sort((a, b) => a.lastsDays! - b.lastsDays!).map((f) => ({ id: f.id, name: f.name, lastsDays: f.lastsDays, color: f.colors[0] })),
   };
 }

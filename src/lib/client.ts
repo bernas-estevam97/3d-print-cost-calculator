@@ -78,6 +78,7 @@ export type Settings = {
   acquiringPct: number; complexitySimplePct: number; complexityMediumPct: number; complexityComplexPct: number;
   defectAllowancePct: number; roundingMode: string; currency: string; theme: string; accent: string;
   defaultTaxRegimeId: string | null;
+  defaultPrinterId: string | null;
 };
 
 export const useSettings = () => useApi<Settings>("/api/settings");
