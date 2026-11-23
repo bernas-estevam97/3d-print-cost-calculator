@@ -66,7 +66,8 @@ export default function DashboardPage() {
     <div>
       <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">{greeting()}, {me?.name.split(" ")[0] ?? ""}!</h1>
+          {/* greeting uses the local clock, so render it only on the client (with me) to avoid a server/client time-zone mismatch */}
+          <h1 className="min-h-8 text-2xl font-bold">{me ? `${greeting()}, ${me.name.split(" ")[0]}!` : ""}</h1>
           <p className="text-sm text-muted">Here&apos;s what&apos;s happening in your business today</p>
         </div>
         <div className="flex flex-wrap gap-2">

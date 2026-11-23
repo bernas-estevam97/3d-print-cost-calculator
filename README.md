@@ -37,7 +37,7 @@ Requires Node.js 24 LTS.
 
 ```bash
 cp .env.example .env   # then generate SESSION_SECRET as the comment in the file says
-npm install            # also generates the Prisma client
+npm ci                 # exact versions from package-lock.json; also generates the Prisma client
 npx prisma migrate dev # creates prisma/dev.db
 npm run dev            # http://localhost:3000, then "Create a workshop" on the login page
 ```

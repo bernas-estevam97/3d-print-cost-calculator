@@ -2,7 +2,8 @@
 // Browser data layer: fetch wrapper + TanStack Query hooks. Every mutation invalidates
 // broadly, so lists, dashboard and calculator refs stay live without reloads (main doc 9).
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
+import { useSyncExternalStore } from "react";
 import { toast } from "sonner";
 
 export class ApiError extends Error {
@@ -39,8 +40,17 @@ export async function upload(file: File, kind: "photo" | "model" = "photo"): Pro
   return url;
 }
 
+const noSubscribe = () => () => {};
+
 export function useApi<T>(url: string | null, opts: { enabled?: boolean } = {}) {
-  return useQuery<T>({ queryKey: [url], queryFn: () => api<T>(url!), enabled: !!url && opts.enabled !== false });
+  const enabled = !!url && opts.enabled !== false;
+  const q = useQuery<T>({ queryKey: [url], queryFn: () => api<T>(url!), enabled });
+  // False only while hydrating. The shell's queries (/api/me, /api/settings) can resolve
+  // before a streamed page segment hydrates; showing cached data then mismatches the
+  // server HTML, which never has data. Mirror the server state for that one render.
+  const hydrated = useSyncExternalStore(noSubscribe, () => true, () => false);
+  if (hydrated) return q;
+  return { ...q, data: undefined, status: "pending", isPending: true, isSuccess: false, isLoading: enabled } as unknown as typeof q;
 }
 
 export const useList = <T,>(entity: string) => useApi<T[]>(`/api/${entity}`);
@@ -98,15 +108,16 @@ export const useMe = () => useApi<Me>("/api/me");
 /** ?key= state in the URL, so tabs and filters survive reload and can be linked. */
 export function useQueryState(key: string, fallback: string) {
   const sp = useSearchParams();
-  const router = useRouter();
-  const pathname = usePathname();
   const value = sp.get(key) ?? fallback;
   const set = (v: string) => {
-    const next = new URLSearchParams(sp.toString());
+    // Read the live URL, not the render-time snapshot, so several setters called
+    // in a row (e.g. a filter Reset) compose instead of the last one winning.
+    // Native replaceState is synchronous and Next syncs useSearchParams with it.
+    const next = new URLSearchParams(window.location.search);
     if (v === fallback) next.delete(key);
     else next.set(key, v);
     const qs = next.toString();
-    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    window.history.replaceState(null, "", qs ? `${window.location.pathname}?${qs}` : window.location.pathname);
   };
   return [value, set] as const;
 }
