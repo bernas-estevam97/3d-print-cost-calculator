@@ -246,3 +246,15 @@ npm run build               # prepare the app (after every update)
 npm start                   # run the app at http://localhost:3000
 npm run backup              # back up database and uploads
 ```
+
+
+
+## Recommended commands for other users (non-developers)
+
+```powershell
+npm ci
+npx prisma generate
+npx prisma migrate deploy
+npm run dev                 # for running dev environment
+npm run build               # prepare production app
+npm start
