@@ -20,7 +20,8 @@ Time needed: about 15 minutes, most of it downloads.
 
 ## 2. Install Node.js (once)
 
-Gori.Lab needs **Node.js 24 LTS** (version 22.5 or newer works too).
+Gori.Lab needs **Node.js 24 or 26** (both are LTS versions). If you ever switch Node.js version after
+installing, read section 10 first.
 
 **Windows** – open *PowerShell* (Start menu → type "PowerShell") and run:
 
@@ -42,7 +43,7 @@ node --version
 npm --version
 ```
 
-The first command must print `v24...` (or at least `v22.5`). If it says "not recognized", restart the
+The first command must print `v24...` or `v26...`. If it says "not recognized", restart the
 computer and try again.
 
 ## 3. Get the app's code
@@ -223,12 +224,48 @@ npm start
 
 `migrate deploy` updates the database structure and keeps your data.
 
-## 10. Troubleshooting
+## 10. Changing the Node.js version
+
+Updating within the same major version (for example 24.16 to 24.20) needs nothing extra.
+
+Changing the major version (24 to 26, or back) breaks the database driver. `better-sqlite3` is
+compiled for one specific Node.js version, and the copy in `node_modules` does not load under another
+one. The app then fails as soon as it opens the database, with an error like *Could not locate the
+bindings file* or *was compiled against a different Node.js version*.
+
+`npm run build` still succeeds in that state, because the build never opens the database. Only
+`npm start` shows the problem.
+
+After every major version switch, stop the app (Ctrl+C) and run:
+
+```powershell
+node --version                # check that the version you want is active
+npm rebuild better-sqlite3    # fetch the driver for this Node.js version
+npm run build
+npm start
+```
+
+If `npm rebuild` fails, or prints a message that install scripts were blocked or skipped, allow
+them and run it again. If it still fails, do a clean reinstall with `npm ci` and then `npm run build`.
+
+**Using nvm (several Node.js versions on one computer).** On Windows, `nvm use 24` / `nvm use 26`
+switches Node.js for the whole computer, not just one terminal, and the choice stays after a restart.
+Check with `node --version` before starting the app, and rebuild as above whenever you switch.
+To avoid rebuilding, keep one copy of the app folder per Node.js version (each has its own
+`node_modules`). Run only one copy at a time, because both use port 3000.
+
+If `npm` stops working after installing nvm (*node is not recognized* from a file under
+`AppData\Roaming\npm`), an old global npm from the previous Node.js install is in the way. Close all
+terminals, open a new one, and run `nvm use 24`. If it persists, delete the `npm`, `npm.cmd`,
+`npm.ps1`, `npx`, `npx.cmd` and `npx.ps1` files in `%AppData%\npm`.
+
+## 11. Troubleshooting
 
 | Problem | Fix |
 | --- | --- |
 | `node` or `npm` "is not recognized" | Close and reopen the terminal, or restart the computer after installing Node.js. |
-| `npm install` fails while building `better-sqlite3` | Your Node.js version is too old or too new. Install Node.js 24 LTS and run `npm install` again. |
+| `npm install` fails while building `better-sqlite3` | Your Node.js version is too old or too new. Install Node.js 24 or 26 and run `npm install` again. |
+| App starts, then fails with *Could not locate the bindings file* or *compiled against a different Node.js version* | Node.js version changed since installation. Run `npm rebuild better-sqlite3`, then `npm run build` (section 10). |
 | *Port 3000 is already in use* / `EADDRINUSE` | The app (or another program) is already running. Close the other terminal, or on Windows run `Get-NetTCPConnection -LocalPort 3000 -State Listen \| ForEach-Object { taskkill /PID $_.OwningProcess /T /F }`. |
 | Error mentioning `SESSION_SECRET` or *password must be at least 32 characters* | `.env` is missing or the key is too short. Redo step 4. |
 | *The table ... does not exist* | The database was not created. Run `npx prisma migrate deploy`. |

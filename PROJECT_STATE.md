@@ -58,16 +58,18 @@ Git: repo initialised on `main`, files staged, **no commit yet**.
 
 | Package | Version | Notes |
 | --- | --- | --- |
-| Next.js | 16.4.3 | Turbopack. Uses `src/proxy.ts` (not middleware), async route params. `cacheComponents`/`partialPrefetching` not enabled. Read `node_modules/next/dist/docs/` before changing framework code (see `AGENTS.md`). |
+| Next.js | 16.4.6 | Turbopack. Uses `src/proxy.ts` (not middleware), async route params. `cacheComponents`/`partialPrefetching` not enabled. Read `node_modules/next/dist/docs/` before changing framework code (see `AGENTS.md`). |
 | React / react-dom | 19.3.1 | Pages are client components using TanStack Query. |
 | TypeScript | 6.0.3 | TS 7 blocked: typescript-eslint needs < 6.1. |
 | ESLint | 9.39.5 | ESLint 10 tried and reverted: eslint-config-next plugins support 9 only. |
 | Prisma | 7.10.1 | With `@prisma/adapter-better-sqlite3` + better-sqlite3. Client generated to `src/generated/` (gitignored, `postinstall` regenerates). Prisma 8 is only an rc. |
 | Tailwind | 4 | Tokens in `src/app/globals.css`. |
 | Others | | zod 4, @tanstack/react-query 5, @dnd-kit, recharts 3, @react-pdf/renderer, fflate, date-fns, bcryptjs, iron-session, next-themes, sonner, lucide-react, clsx, tailwind-merge |
-| Dev | | vitest 5, tsx, @types/node 24 |
+| Dev | | vitest 5, tsx, @types/node 26 |
 
-Package manager: npm. Node 24 LTS.
+Package manager: npm. Node 24 or 26 LTS. `better-sqlite3` is the only dependency with a binary tied to
+one Node ABI (the other native packages use N-API); switching Node major version needs
+`npm rebuild better-sqlite3` (see `INSTALL.md`, section 10).
 
 ## 4. Config
 

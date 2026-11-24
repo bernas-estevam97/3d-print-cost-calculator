@@ -33,7 +33,13 @@ database); there are no API keys or cloud services.
 
 ## Run it
 
-Requires Node.js 24 LTS.
+Requires Node.js 24 or 26 (both LTS).
+
+> **After changing Node.js version (e.g. `nvm use 26`), rebuild the SQLite driver before starting:**
+> `npm rebuild better-sqlite3` (or `npm ci`), then `npm run build`. `better-sqlite3` is the only
+> dependency compiled for one specific Node.js version; without the rebuild the app fails at the first
+> database access with *Could not locate the bindings file*. A successful `npm run build` does not
+> prove the driver works, because the build never loads it. Details: `INSTALL.md`, section 10.
 
 ```bash
 cp .env.example .env   # then generate SESSION_SECRET as the comment in the file says
